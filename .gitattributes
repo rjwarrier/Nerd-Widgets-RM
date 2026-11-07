@@ -1,0 +1,7 @@
+# Rainmeter skins and generated includes are UTF-16; keep them byte-for-byte.
+*.ini binary
+NerdWidgets/@Resources/Common.inc binary
+NerdWidgets/@Resources/Meters.inc binary
+NerdWidgets/@Resources/Sliders.inc binary
+*.ttf binary
+*.png binary
