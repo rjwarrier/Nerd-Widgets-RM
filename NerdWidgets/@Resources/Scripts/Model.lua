@@ -243,6 +243,52 @@ function M.geoParse(json)
     end
     return out
 end
+-- Squarified treemap (Bruls, Huizing & van Wijk): tiles for the positive values, areas in
+-- proportion, kept close to square. Returns {i=index into values, x, y, w, h}, largest first.
+function M.treemap(values, x, y, w, h)
+    local items, total = {}, 0
+    for i, v in ipairs(values) do
+        if v and v > 0 then items[#items + 1] = {i=i, v=v}; total = total + v end
+    end
+    local out = {}
+    if total <= 0 or w <= 0 or h <= 0 then return out end
+    table.sort(items, function(a, b) return a.v > b.v end)
+    for _, it in ipairs(items) do it.a = it.v / total * w * h end
+    local function worst(row, side)
+        local sum, hi, lo = 0, 0, math.huge
+        for _, it in ipairs(row) do sum = sum + it.a; hi = math.max(hi, it.a); lo = math.min(lo, it.a) end
+        return math.max(side * side * hi / (sum * sum), sum * sum / (side * side * lo))
+    end
+    local function place(row)
+        local sum = 0
+        for _, it in ipairs(row) do sum = sum + it.a end
+        if w >= h then
+            local cw, yy = sum / h, y
+            for _, it in ipairs(row) do
+                local rh = it.a / cw
+                out[#out + 1] = {i=it.i, x=x, y=yy, w=cw, h=rh}; yy = yy + rh
+            end
+            x, w = x + cw, w - cw
+        else
+            local rh, xx = sum / w, x
+            for _, it in ipairs(row) do
+                local cw = it.a / rh
+                out[#out + 1] = {i=it.i, x=xx, y=y, w=cw, h=rh}; xx = xx + cw
+            end
+            y, h = y + rh, h - rh
+        end
+    end
+    local row, k = {}, 1
+    while k <= #items do
+        local side = math.min(w, h)
+        local trial = {unpack(row)}
+        trial[#trial + 1] = items[k]
+        if #row == 0 or worst(trial, side) <= worst(row, side) then row = trial; k = k + 1
+        else place(row); row = {} end
+    end
+    if #row > 0 then place(row) end
+    return out
+end
 function M.coreCount(raw)
     local n = tonumber(raw) or 1
     return M.clamp(math.floor(n), 1, 32)

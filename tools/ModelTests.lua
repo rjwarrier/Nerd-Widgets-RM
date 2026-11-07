@@ -71,13 +71,22 @@ function Initialize()
     check(#places==4 and places[2].lat==9.93988 and places[2].country=='India' and places[2].admin1=='Kerala' and places[4].country==nil,'Geocoding results')
     check(#M.geoParse('{"generationtime_ms":0.07}')==0 and #M.geoParse('')==0,'No geocoding results')
     check(M.urlEncode('New York, NY')=='New+York%2C+NY' and M.urlEncode('S\195\163o Paulo')=='S%C3%A3o+Paulo','URL encoding')
+    local tiles=M.treemap({6,6,4,3,2,0,1},0,0,600,400)
+    local area,inBounds,seen=0,true,{}
+    for _,t in ipairs(tiles) do
+      area=area+t.w*t.h;seen[t.i]=true
+      inBounds=inBounds and t.x>=-1e-6 and t.y>=-1e-6 and t.x+t.w<=600+1e-6 and t.y+t.h<=400+1e-6
+    end
+    check(#tiles==6 and not seen[6] and math.abs(area-240000)<1e-3 and inBounds,'Treemap fills the area, skips zeros')
+    check(math.abs(tiles[1].w*tiles[1].h-240000*6/22)<1e-3,'Treemap areas are proportional')
+    check(#M.treemap({0,0},0,0,10,10)==0,'Empty treemap')
     local cases=0
     -- entry, kind, variant, height
     local entries={{'Battery','Battery','Battery',280},{'Compact','Battery','Compact',168},{'Network','Network','Network',230},
       {'NetworkCompact','Network','Compact',150},{'Vitals','Vitals','Vitals',270},{'VitalsCompact','Vitals','Compact',140},
       {'Clock','Clock','Clock',220},{'ClockCompact','Clock','Compact',120},{'Shortcuts','Shortcuts','Shortcuts',136},
       {'Audio','Audio','Audio',190},{'Spectrum','Spectrum','Spectrum',220},{'Cores','Cores','Cores',260},{'SysInfo','SysInfo','SysInfo',260},
-      {'Diagnostics','Diagnostics','Diagnostics',280},{'Calendar','Calendar','Calendar',300},{'Processes','Processes','Processes',330},
+      {'Diagnostics','Diagnostics','Diagnostics',280},{'Calendar','Calendar','Calendar',300},{'Processes','Processes','Processes',330},{'ProcessesMap','Processes','ProcessesMap',330},
       {'DiskIO','DiskIO','DiskIO',300},{'Binary','Binary','Binary',270},{'BinaryCompact','Binary','Compact',210},{'GPU','GPU','GPU',330},
       {'Focus','Focus','Focus',262},{'Countdown','Countdown','Countdown',250},{'Weather','Weather','Weather',330},
       {'Progress','Progress','Progress',270},{'SunMoon','SunMoon','SunMoon',330},{'SunMoonSouth','SunMoon','SunMoon',330},

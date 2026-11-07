@@ -401,7 +401,52 @@ local function ellipsize(value,size,width)
     value=tostring(value)
     return #value>maxChars and value:sub(1,maxChars-1)..'…' or value
 end
+-- Treemap variant: one tile per top-five process, sized by its share of the five.
+local function processMap()
+    local cpuTotal=M.clamp(measure('CPU'),0,100)
+    local ramTotal=measure('RAMTotal');local ramUsed=measure('RAM')
+    header('PROCESS MAP','TOP 5')
+    local tones={C.accent,C.secondary,C.accent..',170',C.secondary..',170',C.accent..',105'}
+    local inks={C.surface,C.surface,C.surface,C.surface,C.text}
+    local y=48
+    local mapH=96
+    local sections={{'CPU','ProcCPU',string.format('%.0f%% IN USE',cpuTotal),cpuTotal},
+        {'MEMORY','ProcRAM',ramTotal>0 and M.bytes(ramUsed)..' IN USE' or '--',ramUsed}}
+    for s,sec in ipairs(sections) do
+        text(sec[1],24,y,10,C.muted,W/2-24)
+        text(sec[3],W-24,y,10,C.muted,W/2-24,nil,'Right')
+        y=y+labelHeight(10)+2
+        -- The rest of the system is left out: it would dwarf the processes in the map.
+        local names,values,labels={},{},{}
+        for i=1,5 do
+            local v=math.max(0,measure(sec[2]..i))
+            names[i]=measureString(sec[2]..i,'')
+            if names[i]=='' then v=0 end
+            values[i]=v
+            labels[i]=s==1 and string.format('%.1f%%',v) or M.bytes(v)
+        end
+        rect(24,y,W-48,mapH,11,C.panel)
+        local tiles=M.treemap(values,24,y,W-48,mapH)
+        if #tiles==0 then text('Idle',W/2,y+mapH/2-labelHeight(11)/2,11,C.muted,W-48,nil,'Center') end
+        for _,t in ipairs(tiles) do
+            local tx,ty,tw,th=t.x+2,t.y+2,math.max(0,t.w-4),math.max(0,t.h-4)
+            rect(tx,ty,tw,th,math.min(9,tw/2,th/2),tones[t.i])
+            local ink=inks[t.i]
+            local nameH,valueH=labelHeight(11),labelHeight(10)
+            -- Label what fits: name and value, the name alone, or nothing for slivers.
+            if tw>=40 and th>=nameH+4 then
+                text(ellipsize(names[t.i],11,tw-12),tx+6,ty+3,11,ink,tw-10)
+                if th>=nameH+valueH+6 then text(labels[t.i],tx+6,ty+3+nameH,10,ink,tw-10) end
+            end
+        end
+        y=y+mapH+12
+    end
+    text('ROLLED UP BY NAME',24,y,10,C.muted,W-144)
+    text('Details ↗',W-24,y,11,C.muted,100,'["taskmgr.exe"]','Right')
+    H=y+labelHeight(10)+12
+end
 local function processes()
+    if variant=='ProcessesMap' then processMap() return end
     header('TOP PROCESSES')
     local total=measure('RAMTotal')
     local y=50
@@ -1453,9 +1498,9 @@ local function settings()
     text('ADD TO DESKTOP',26,440,10,C.muted)
     local widgetList={'Battery','Network','Vitals','Clock','Shortcuts','Audio','Cores','SysInfo','Diagnostics','Spectrum',
         'Calendar','Processes','DiskIO','Binary','GPU','Focus','Countdown','Weather','Progress','SunMoon','Analog','StatusBar',
-        'BatteryCompact','BinaryCompact','VitalsCompact','NetworkCompact','ClockCompact'}
+        'BatteryCompact','BinaryCompact','VitalsCompact','NetworkCompact','ClockCompact','ProcessesMap'}
     local labels={DiskIO='Disk I/O',Focus='Focus Timer',Progress='Day Progress',SunMoon='Sun & Moon',StatusBar='Status Bar',
-        BatteryCompact='Battery Mini',BinaryCompact='Binary Mini',VitalsCompact='Vitals Mini',NetworkCompact='Network Mini',ClockCompact='Clock Mini'}
+        BatteryCompact='Battery Mini',BinaryCompact='Binary Mini',VitalsCompact='Vitals Mini',NetworkCompact='Network Mini',ClockCompact='Clock Mini',ProcessesMap='Process Map'}
     for i,v in ipairs(widgetList) do
         local row=math.floor((i-1)/4);local col=(i-1)%4
         button(labels[v] or v,24+col*115,456+row*36,107,false,"Load('"..v.."')",bh)
@@ -1524,7 +1569,7 @@ function Load(name)
         Calendar=true,Processes=true,DiskIO=true,Binary=true,GPU=true,Focus=true,Countdown=true,Weather=true,
         Progress=true,SunMoon=true,Analog=true,StatusBar=true}
     -- Compact variants share their widget's config, so loading one swaps the other.
-    local compact={BatteryCompact='Battery',BinaryCompact='Binary',VitalsCompact='Vitals',NetworkCompact='Network',ClockCompact='Clock'}
+    local compact={BatteryCompact='Battery',BinaryCompact='Binary',VitalsCompact='Vitals',NetworkCompact='Network',ClockCompact='Clock',ProcessesMap='Processes'}
     -- Older variants are Compact.ini; newer ones are <Widget>Compact.ini so they sort after the full card.
     local file={BatteryCompact='Compact.ini',BinaryCompact='Compact.ini'}
     if compact[name] then SKIN:Bang('!ActivateConfig','NerdWidgets\\'..compact[name],file[name] or name..'.ini')

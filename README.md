@@ -34,6 +34,7 @@ The ZIP is an alternative: extract it, then copy its `NerdWidgets` folder into y
 | **Network Diagnostics** | Real-time ICMP ping latency with 60-second sparkline, internet status, local IP, gateway, subnet mask, and DNS server. |
 | **Calendar** | Monday-first month grid with today highlighted, weekends in the secondary color, ISO week and day of year. Use â€¹ â€º to browse months; click the month or **Today** to return. |
 | **Top Processes** | Top five processes by CPU (percent of all logical processors) and by private memory, rolled up by process name, with load bars. Uses Rainmeter's bundled UsageMonitor plugin. |
+| **Top Processes · Map** | The same top five, drawn as treemaps: one tile per process, sized by its share of the five, for CPU and for memory, with the system totals above each map. Load **Process Map** from Settings, or `ProcessesMap.ini`; it replaces the list version. |
 | **Disk I/O** | Read and write throughput across all physical disks with a shared-scale 60-second graph, plus free space for up to four fixed drives (C:â€“J:, detected automatically). |
 | **Binary Clock** | Hours, minutes, and seconds as binary-coded decimal dots with decimal digits beneath, plus Unix epoch, hex epoch, UTC, and ISO week/day. |
 | **Binary Clock Â· Compact** | The same dots and digits without the reading cards. Load **Binary Mini** from Settings, or `Compact.ini` in Rainmeter Manage; it replaces the full Binary Clock. |

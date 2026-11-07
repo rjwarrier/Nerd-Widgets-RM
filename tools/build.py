@@ -121,6 +121,8 @@ Group=NerdWidgetsDrawing
     for i in range(1, 6):
         processes += measure(f'ProcRAM{i}','Plugin',Plugin='UsageMonitor',Alias='RAM',Index=i)
     processes += measure('RAMTotal','PhysicalMemory',Total=1)
+    # Process Map: whole-system totals for its section headings.
+    processes += measure('CPU','CPU',Processor=0) + measure('RAM','PhysicalMemory')
     diskio = measure('DiskRead','Plugin',Plugin='UsageMonitor',Category='PhysicalDisk',Counter='Disk Read Bytes/sec',Index=0)
     diskio += measure('DiskWrite','Plugin',Plugin='UsageMonitor',Category='PhysicalDisk',Counter='Disk Write Bytes/sec',Index=0)
     # Fixed drives C-J are detected by a non-zero total; missing letters read 0.
@@ -183,7 +185,7 @@ Group=NerdWidgetsDrawing
                 ('Audio','Audio',340,190,audio),('Spectrum','Spectrum',340,220,spectrum),
                 ('Cores','Cores',340,260,cores),('SysInfo','SysInfo',340,260,sysinfo),
                 ('Diagnostics','Diagnostics',340,280,diagnostics),
-                ('Calendar','Calendar',340,300,''),('Processes','Processes',340,330,processes),
+                ('Calendar','Calendar',340,300,''),('Processes','Processes',340,330,processes),('Processes','ProcessesMap',340,330,processes),
                 ('DiskIO','DiskIO',340,300,diskio),('Binary','Binary',340,270,''),('Binary','Compact',340,210,''),('GPU','GPU',340,330,gpu),('Focus','Focus',340,262,''),
                 ('Countdown','Countdown',340,250,countdown),('Weather','Weather',340,330,weather),
                 ('Progress','Progress',340,270,''),('SunMoon','SunMoon',340,330,location),
