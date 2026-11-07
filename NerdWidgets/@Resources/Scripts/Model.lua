@@ -65,6 +65,21 @@ function M.batteryRange(minutes)
     end
     return best
 end
+-- Auto-scaled level axis: the visible min to max with a little headroom, at least 10
+-- points tall, kept within 0-100. Returns low, high.
+function M.levelScale(points)
+    local lo, hi = math.huge, -math.huge
+    for _, p in ipairs(points) do lo = math.min(lo, p.v); hi = math.max(hi, p.v) end
+    if lo > hi then return 0, 100 end
+    lo, hi = math.floor(lo - 2), math.ceil(hi + 2)
+    if hi - lo < 10 then
+        local mid = (lo + hi) / 2
+        lo, hi = math.floor(mid - 5), math.floor(mid - 5) + 10
+    end
+    if lo < 0 then hi, lo = hi - lo, 0 end
+    if hi > 100 then lo, hi = math.max(0, lo - (hi - 100)), 100 end
+    return lo, hi
+end
 -- Charge rate in % per hour at each sample, over a trailing window (default 10 minutes).
 -- Whole-percent readings make short windows jumpy, so a sample needs at least half a
 -- window of unbroken history behind it (gaps over 150 s break the history).

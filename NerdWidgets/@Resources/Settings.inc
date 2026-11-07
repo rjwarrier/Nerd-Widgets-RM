@@ -68,3 +68,5 @@ WeekStart=Mon
 ; buttons under the graph to change it. A full day of history is kept, sampled
 ; once a minute while a Battery variant is loaded.
 BatteryRange=360
+; 1 zooms the battery level axis to the visible data; click the graph to switch.
+BatteryAutoScale=0

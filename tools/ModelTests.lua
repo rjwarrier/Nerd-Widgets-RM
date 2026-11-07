@@ -84,6 +84,11 @@ function Initialize()
     check(#tiles==6 and not seen[6] and math.abs(area-240000)<1e-3 and inBounds,'Treemap fills the area, skips zeros')
     check(math.abs(tiles[1].w*tiles[1].h-240000*6/22)<1e-3,'Treemap areas are proportional')
     check(#M.treemap({0,0},0,0,10,10)==0,'Empty treemap')
+    local lo,hi=M.levelScale({{v=60},{v=64}});check(lo==57 and hi==67,'Auto scale pads a flat line to 10 points')
+    lo,hi=M.levelScale({{v=1},{v=3}});check(lo==0 and hi==10,'Auto scale stays above 0')
+    lo,hi=M.levelScale({{v=98},{v=100}});check(lo==90 and hi==100,'Auto scale stays below 100')
+    lo,hi=M.levelScale({{v=20},{v=80}});check(lo==18 and hi==82,'Auto scale with headroom')
+    lo,hi=M.levelScale({});check(lo==0 and hi==100,'Empty history uses 0-100')
     check(M.batteryRange(25)==30 and M.batteryRange(1000)==1080 and M.batteryRange('x')==360 and M.batteryRange(5000)==1440,'Battery ranges snap')
     local hist={}
     for k=0,30 do hist[#hist+1]={t=k*60,v=50+k*.5} end
@@ -117,7 +122,7 @@ function Initialize()
             Theme=(theme=='Blacks' or theme=='Instrument') and 'Dark' or theme,
             -- Label/number sizes vary with the flag case: default, the user's 105/70, and both extremes.
             TextScale=({[1]='1',[8]='1.05',[128]='1.5',[255]='0.7'})[flags],NumberScale=({[1]='1',[8]='0.7',[128]='0.5',[255]='1.5'})[flags],Style=(theme=='Blacks' or theme=='Instrument') and theme or 'Expressive',Scale=tostring(scale),Palette=({'Sage','Teal','Rose','Amber','Slate','Blue'})[(width+flags)%6+1],CoreCount=flags>=128 and '32' or '8',PingHost='1.1.1.1',
-            BatteryRange=({[1]='30',[8]='1440',[128]='360',[255]='60'})[flags],
+            BatteryRange=({[1]='30',[8]='1440',[128]='360',[255]='60'})[flags],BatteryAutoScale=(flags==1 or flags==128) and '1' or '0',
             WeatherEnabled=flags==255 and '0' or '1',WeatherCity='Test City',
             -- Sun & Moon: unset, tropical, polar (night or midnight sun by date), and the southern hemisphere.
             WeatherLatitude=flags==255 and '0' or entry=='SunMoonSouth' and '-33.87' or flags==128 and '78.2' or '9.93',

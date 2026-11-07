@@ -174,7 +174,7 @@ Group=NerdWidgetsDrawing
                            'WeatherTempUnit=celsius\nWeatherWindUnit=kmh\nWeatherWidth=340\n',
                 'Countdown': 'CountdownTitle=New Year\nCountdownDate=2027-01-01 00:00\nCountdownFrom=\nCountdownWidth=340\n',
                 'Focus': 'FocusWidth=340\n','GPU': 'GPUWidth=340\n','Calendar': 'CalendarWidth=340\nWeekStart=Mon\n','Clock': 'WeekStart=Mon\n',
-                'Processes': 'ProcessesWidth=340\n','DiskIO': 'DiskIOWidth=340\n','Binary': 'BinaryWidth=340\n','Battery': 'BatteryRange=360\n',
+                'Processes': 'ProcessesWidth=340\n','DiskIO': 'DiskIOWidth=340\n','Binary': 'BinaryWidth=340\n','Battery': 'BatteryRange=360\nBatteryAutoScale=0\n',
                 'Progress': 'ProgressWidth=340\nWeekStart=Mon\n','Analog': 'AnalogWidth=340\nAnalogSeconds=1\n',
                 'SunMoon': 'SunMoonWidth=340\nWeatherLatitude=0\nWeatherLongitude=0\nWeatherCity=\n',
                 'StatusBar': 'StatusBarWidth=800\nPingHost=1.1.1.1\nNetworkInterface=Best\n'}

@@ -260,6 +260,15 @@ function SetBatteryRange(minutes)
     SKIN:Bang('!UpdateMeterGroup','NerdWidgetsDrawing')
     SKIN:Bang('!Redraw')
 end
+-- Clicking the graph switches the level axis between 0-100% and the visible range.
+function ToggleBatteryScale()
+    local v=num('BatteryAutoScale',0)==1 and '0' or '1'
+    SKIN:Bang('!SetVariable','BatteryAutoScale',v)
+    SKIN:Bang('!WriteKeyValue','Variables','BatteryAutoScale',v,var('@')..'Settings.inc')
+    SKIN:Bang('!UpdateMeasure','MeasureRenderer')
+    SKIN:Bang('!UpdateMeterGroup','NerdWidgetsDrawing')
+    SKIN:Bang('!Redraw')
+end
 local rangeLabels={[30]='30M',[60]='1H',[180]='3H',[360]='6H',[720]='12H',[1080]='18H',[1440]='24H'}
 local function battery(now)
     local b=M.battery(measure('BatteryFlags'),measure('BatteryPercent'),measure('BatteryAC'),measure('BatteryLife'))
@@ -320,7 +329,16 @@ local function battery(now)
             bandStart=nil
         end
     end
-    for _,v in ipairs({0,50,100}) do line(px,py+ph*(1-v/100),px+pw,py+ph*(1-v/100),C.border..',90',1) end
+    local auto=num('BatteryAutoScale',0)==1
+    local lo,hi=0,100
+    if auto then lo,hi=M.levelScale(visible) end
+    local function LY(v) return py+ph*(1-M.clamp((v-lo)/(hi-lo),0,1)) end
+    for _,v in ipairs({lo,(lo+hi)/2,hi}) do line(px,LY(v),px+pw,LY(v),C.border..',90',1) end
+    if auto then
+        -- Axis bounds in the left corners, so the zoomed scale is never mistaken for 0-100%.
+        text(string.format('%d%%',hi),gx+4,gy+1,8,C.accent,40)
+        text(string.format('%d%%',lo),gx+4,gy+gh-labelHeight(8)-1,8,C.accent,40)
+    end
     -- Long ranges hold up to 1,440 samples; draw about one point per two pixels.
     local step=math.max(1,math.ceil(#visible/math.max(1,pw/2)))
     local function plot(list,Y,color,width)
@@ -343,15 +361,19 @@ local function battery(now)
         plot(rates,function(v) return py+ph*(.5-M.clamp(v/scale,-1,1)/2) end,C.secondary,1.6)
         text(string.format('±%d%%/H',scale),px+pw,gy+2,8,C.secondary,70,nil,'Right')
     end
-    plot(visible,function(v) return py+ph*(1-v/100) end,C.accent,2.2)
+    plot(visible,LY,C.accent,2.2)
     if #visible>0 then
         local p=visible[#visible]
-        circle(X(p.t),py+ph*(1-p.v/100),3,C.accent)
+        circle(X(p.t),LY(p.v),3,C.accent)
     end
     if #visible<2 then
         text(b.valid and 'Collecting history · one sample / minute' or 'History starts when a battery is available',
             gx+12,gy+gh/2-labelHeight(11)/2,11,C.muted,gw-24)
     end
+    -- The whole graph is the scale toggle: an almost transparent box above it.
+    text(' ',gx,gy,10,C.muted,gw,action('ToggleBatteryScale()'))
+    texts[#texts].H=f(gh);texts[#texts].SolidColor='0,0,0,1'
+    texts[#texts].ToolTipText=auto and 'Click for a 0-100% scale' or 'Click to zoom the scale to the data'
     -- Range buttons.
     local rangeY=gy+gh+8
     local colW=(W-48)/#M.batteryRanges
