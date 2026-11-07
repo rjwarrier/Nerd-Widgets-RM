@@ -89,6 +89,14 @@ function Initialize()
     lo,hi=M.levelScale({{v=98},{v=100}});check(lo==90 and hi==100,'Auto scale stays below 100')
     lo,hi=M.levelScale({{v=20},{v=80}});check(lo==18 and hi==82,'Auto scale with headroom')
     lo,hi=M.levelScale({});check(lo==0 and hi==100,'Empty history uses 0-100')
+    local function h(rows) local out={} for k,r in ipairs(rows) do out[k]={t=r[1],v=50,c=r[2]} end return out end
+    local since,exact=M.onBatterySince(h({{0,2},{60,1},{120,0},{180,0},{240,0}}))
+    check(since==120 and exact,'Unplugged at the first on-battery sample')
+    since,exact=M.onBatterySince(h({{0,nil},{60,0},{120,0}}))
+    check(since==60 and not exact,'Older rows: at least since the first known on-battery sample')
+    since,exact=M.onBatterySince(h({{0,2},{60,0},{600,0},{660,0}}))
+    check(since==600 and not exact,'A gap makes the time a lower bound')
+    check(M.onBatterySince(h({{0,0},{60,2}}))==nil and M.onBatterySince({})==nil,'Not on battery')
     check(M.batteryRange(25)==30 and M.batteryRange(1000)==1080 and M.batteryRange('x')==360 and M.batteryRange(5000)==1440,'Battery ranges snap')
     local hist={}
     for k=0,30 do hist[#hist+1]={t=k*60,v=50+k*.5} end
@@ -121,7 +129,7 @@ function Initialize()
             -- Cores: half the flag cases exercise the dense 32-thread heatmap.
             Theme=(theme=='Blacks' or theme=='Instrument') and 'Dark' or theme,
             -- Label/number sizes vary with the flag case: default, the user's 105/70, and both extremes.
-            TextScale=({[1]='1',[8]='1.05',[128]='1.5',[255]='0.7'})[flags],NumberScale=({[1]='1',[8]='0.7',[128]='0.5',[255]='1.5'})[flags],Style=(theme=='Blacks' or theme=='Instrument') and theme or 'Expressive',Scale=tostring(scale),Palette=({'Sage','Teal','Rose','Amber','Slate','Blue'})[(width+flags)%6+1],CoreCount=flags>=128 and '32' or '8',PingHost='1.1.1.1',
+            TextScale=({[1]='1',[8]='1.05',[128]='1.5',[255]='0.7'})[flags],NumberScale=({[1]='1',[8]='0.7',[128]='0.5',[255]='1.5'})[flags],Style=(theme=='Blacks' or theme=='Instrument') and theme or 'Expressive',Scale=tostring(scale),Palette=({'Sage','Teal','Rose','Amber','Slate','Blue','Red'})[(width+flags+scale*4)%7+1],CoreCount=flags>=128 and '32' or '8',PingHost='1.1.1.1',
             BatteryRange=({[1]='30',[8]='1440',[128]='360',[255]='60'})[flags],BatteryAutoScale=(flags==1 or flags==128) and '1' or '0',
             WeatherEnabled=flags==255 and '0' or '1',WeatherCity='Test City',
             -- Sun & Moon: unset, tropical, polar (night or midnight sun by date), and the southern hemisphere.
@@ -160,7 +168,7 @@ function Initialize()
             local rows,now0={},os.time()
             for k=1440,0,-1 do
               if k<200 or k>220 then
-                local c=math.floor(k/180)%2
+                local c=k<120 and 0 or math.floor(k/180)%2*2-math.floor(k/360)%2
                 local v=math.floor(55+40*math.sin(k/90))
                 rows[#rows+1]=k>1200 and string.format('%d\t%d',now0-k*60,v) or string.format('%d\t%d\t%d',now0-k*60,v,c)
               end

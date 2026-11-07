@@ -20,9 +20,12 @@ local palettes = {
     Amber={dark={'250,206,110','200,214,150','64,48,16','24,20,12','38,32,20','246,238,220','200,186,156','96,80,48'},
           light={'124,88,0','90,100,40','255,228,170','255,250,240','248,238,218','40,32,14','116,102,72','226,210,176'}},
     Slate={dark={'200,208,220','160,190,230','44,48,54','20,22,25','30,33,37','232,234,238','160,166,176','70,76,86'},
-          light={'60,68,82','60,100,150','220,224,230','248,249,251','236,238,242','24,26,30','100,106,116','206,210,218'}}
+          light={'60,68,82','60,100,150','220,224,230','248,249,251','236,238,242','24,26,30','100,106,116','206,210,218'}},
+    -- Red: a pure 255,0,0 accent, made for Blacks; deeper tones keep Light readable.
+    Red={dark={'255,0,0','255,110,110','64,10,10','24,14,14','38,20,20','246,228,228','200,160,160','96,48,48'},
+          light={'190,0,0','150,60,60','255,218,218','255,248,248','250,232,232','48,16,16','128,90,90','232,200,200'}}
 }
-local paletteOrder={'Sage','Lavender','Blue','Peach','Teal','Rose','Amber','Slate'}
+local paletteOrder={'Sage','Lavender','Blue','Peach','Teal','Rose','Amber','Slate','Red'}
 -- Instrument (phone lab look) per palette: accent, secondary, chip, surface, panel, text, muted, border, track.
 -- Blue is the exact Pixel sample; the others keep its structure in their own hue.
 local instrument={
@@ -33,7 +36,8 @@ local instrument={
     Teal={'140,230,220','250,190,170','0,96,96','8,34,38','14,46,50','224,246,244','158,196,194','44,92,96','26,66,70'},
     Rose={'255,182,200','200,200,255','130,30,72','46,12,28','58,20,38','252,230,238','216,168,184','110,52,78','80,34,54'},
     Amber={'255,214,120','255,170,150','110,70,0','36,26,6','48,36,12','252,242,220','214,196,150','100,80,36','70,54,20'},
-    Slate={'210,220,236','180,210,255','52,60,74','22,26,32','30,35,43','232,236,242','166,174,188','74,82,98','50,56,68'}
+    Slate={'210,220,236','180,210,255','52,60,74','22,26,32','30,35,43','232,236,242','166,174,188','74,82,98','50,56,68'},
+    Red={'255,0,0','255,150,150','120,0,0','40,6,6','54,12,12','252,228,228','214,166,166','110,40,40','80,24,24'}
 }
 local function var(name, default) return SKIN:GetVariable(name, default or '') end
 local function num(name, default) return tonumber(var(name)) or default end
@@ -245,7 +249,7 @@ end
 local function persist()
     local file=io.open(historyFile..'.tmp','w')
     if not file then return end
-    -- Columns: time, level, 1 while charging.
+    -- Columns: time, level, power (0 on battery, 1 charging, 2 on AC not charging).
     for _,p in ipairs(history) do file:write(p.t,'\t',p.v,'\t',p.c or 0,'\n') end
     file:close()
     -- Same skin owns the history file; variants in one config cannot run together.
@@ -275,11 +279,19 @@ local function battery(now)
     -- A full day is always kept, so any range can be shown at once.
     history=M.trim(history,now,24)
     if b.valid and M.append(history,now,b.percent,60) then
-        history[#history].c=b.charging and 1 or 0
+        history[#history].c=b.charging and 1 or b.ac==1 and 2 or 0
         persist()
     end
     if not b.valid then sessionStart=nil;sessionLevel=nil;sessionAC=nil
     elseif sessionAC~=b.ac then sessionAC=b.ac;sessionStart=now;sessionLevel=b.percent end
+    -- Time on battery since the last unplug, kept across refreshes by the history file.
+    local unplugged
+    if b.valid and b.ac==0 then
+        local since,exact=M.onBatterySince(history)
+        if since then unplugged=M.duration(now-since)..(exact and '' or '+')
+        elseif history[#history] and history[#history].c then unplugged='Just now'
+        elseif sessionStart then unplugged=M.duration(now-sessionStart)..'+' end
+    end
     local compact=variant=='Compact'
     local reading=b.valid and string.format('%.0f%%',b.percent) or '--'
     local numberFont=var('NumberFont','JetBrains Mono')
@@ -292,7 +304,8 @@ local function battery(now)
         H=statusY+labelHeight(12)+22
         header('BATTERY')
         hero(reading,22,top,58,C.accent,numberWidth,'["ms-settings:batterysaver"]',nil,numberFont)
-        chip('SOURCE',b.ac==1 and 'Plugged in' or b.ac==0 and 'Battery' or 'Unknown',chipX,57,113)
+        if unplugged then chip('ON BATTERY',unplugged,chipX,57,113)
+        else chip('SOURCE',b.ac==1 and 'Plugged in' or b.ac==0 and 'Battery' or 'Unknown',chipX,57,113) end
         circle(29,statusY+10*T,3,b.valid and C.accent or C.muted)
         text(b.status,39,statusY,12,C.muted,W-64)
         return
@@ -307,7 +320,8 @@ local function battery(now)
     header('BATTERY',string.upper(b.status))
     hero(reading,22,top,56,C.accent,numberWidth,'["ms-settings:batterysaver"]',nil,numberFont)
     local cw=(W-chipX-32)/2
-    chip('POWER',b.charging and 'Charging' or b.ac==1 and 'AC power' or b.ac==0 and 'Battery' or 'Unknown',chipX,50,cw)
+    if unplugged then chip('ON BATTERY',unplugged,chipX,50,cw)
+    else chip('POWER',b.charging and 'Charging' or b.ac==1 and 'AC power' or b.ac==0 and 'Battery' or 'Unknown',chipX,50,cw) end
     chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX+cw+8,50,cw)
     local gx,gy,gw,gh=24,math.max(top+effective*1.4,50+chipHeight())+10,W-48,74
     graphPanel(gx,gy,gw,gh,12)
@@ -1754,9 +1768,10 @@ local function settings()
     text('CORNERS',254,106,10,C.muted)
     for i,v in ipairs({0,16,28}) do button(({ 'Square','Soft','Round' })[i],252+(i-1)*76,122,72,num('Radius',28)==v,"Configure('Radius','"..v.."')",bh) end
     text(style=='Blacks' and 'ACCENT PALETTE' or 'PALETTE',26,164,10,C.muted)
+    -- Five per row: two rows hold up to ten palettes.
     for i,v in ipairs(paletteOrder) do
-        local row=math.floor((i-1)/4);local col=(i-1)%4
-        button(v,24+col*115,180+row*36,107,var('Palette','Sage')==v,"Configure('Palette','"..v.."')",bh)
+        local row=math.floor((i-1)/5);local col=(i-1)%5
+        button(v,24+col*91.6,180+row*36,84,var('Palette','Sage')==v,"Configure('Palette','"..v.."')",bh)
     end
     slider('Scale','WIDGET SIZE',262,{.25,.5,.75,1,1.25,1.5})
     slider('TextScale','LABELS AND READINGS',320)
@@ -1825,7 +1840,7 @@ function Configure(key,value)
         SKIN:Bang('!WriteKeyValue','Variables',key,tostring(size),var('@')..'Settings.inc')
         return
     end
-    local allowed={Style={Expressive=true,Blacks=true,Instrument=true},Theme={Dark=true,Light=true},Palette={Sage=true,Lavender=true,Blue=true,Peach=true,Teal=true,Rose=true,Amber=true,Slate=true},
+    local allowed={Style={Expressive=true,Blacks=true,Instrument=true},Theme={Dark=true,Light=true},Palette={Sage=true,Lavender=true,Blue=true,Peach=true,Teal=true,Rose=true,Amber=true,Slate=true,Red=true},
         Radius={['0']=true,['16']=true,['28']=true}}
     if not allowed[key] or not allowed[key][value] then return end
     SKIN:Bang('!WriteKeyValue','Variables',key,value,var('@')..'Settings.inc')

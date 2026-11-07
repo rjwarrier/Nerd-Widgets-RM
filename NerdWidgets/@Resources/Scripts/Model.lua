@@ -65,6 +65,23 @@ function M.batteryRange(minutes)
     end
     return best
 end
+-- When the battery was last unplugged, from history rows whose c is 0 (on battery),
+-- 1 (charging) or 2 (on AC, not charging). Walks back over unbroken on-battery samples.
+-- Returns the time and whether it is exact; false means the history runs out first
+-- (a gap, rows from before the power column, or the start of the file), so the real
+-- unplug time is at least that long ago. nil when the latest sample is not on battery.
+function M.onBatterySince(history)
+    local last = history[#history]
+    if not last or last.c ~= 0 then return nil end
+    local since = last.t
+    for i = #history - 1, 1, -1 do
+        local p = history[i]
+        if history[i + 1].t - p.t > 150 or p.c == nil then return since, false end
+        if p.c ~= 0 then return since, true end
+        since = p.t
+    end
+    return since, false
+end
 -- Auto-scaled level axis: the visible min to max with a little headroom, at least 10
 -- points tall, kept within 0-100. Returns low, high.
 function M.levelScale(points)
