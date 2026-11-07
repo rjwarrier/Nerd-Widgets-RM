@@ -58,8 +58,13 @@ WeatherLongitude=0
 ; celsius + kmh, or fahrenheit + mph
 WeatherTempUnit=celsius
 WeatherWindUnit=kmh
-; History is sampled only while a Battery variant is loaded.
 ; Sun & Moon reuses WeatherLatitude/WeatherLongitude; sun times are computed locally (no download).
 ; Analog Clock: 1 shows a second hand and a ring that sweeps each minute; 0 sweeps each hour.
 AnalogSeconds=1
-HistoryHours=6
+; First day of the week for Calendar, Day Progress and Clock: Mon or Sun.
+; Clicking the weekday letters on the Calendar card switches it.
+WeekStart=Mon
+; Battery graph range in minutes: 30, 60, 180, 360, 720, 1080 or 1440. Click the range
+; buttons under the graph to change it. A full day of history is kept, sampled
+; once a minute while a Battery variant is loaded.
+BatteryRange=360

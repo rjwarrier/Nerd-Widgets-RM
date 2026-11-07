@@ -52,8 +52,8 @@ Shape=Rectangle 0,0,1,1 | StrokeWidth 0 | Fill Color 0,0,0,0
 DynamicVariables=1
 Group=NerdWidgetsDrawing
 '''
-    # 80 pooled text meters; ModelTests checks no card exceeds the pool.
-    for i in range(1, 81):
+    # 100 pooled text meters; ModelTests checks no card exceeds the pool.
+    for i in range(1, 101):
         meters += f'''\n[Text{i}]
 Meter=String
 FontFace=#Font#
@@ -173,9 +173,9 @@ Group=NerdWidgetsDrawing
     defaults = {'Weather': 'WeatherEnabled=0\nWeatherLatitude=0\nWeatherLongitude=0\nWeatherCity=\n'
                            'WeatherTempUnit=celsius\nWeatherWindUnit=kmh\nWeatherWidth=340\n',
                 'Countdown': 'CountdownTitle=New Year\nCountdownDate=2027-01-01 00:00\nCountdownFrom=\nCountdownWidth=340\n',
-                'Focus': 'FocusWidth=340\n','GPU': 'GPUWidth=340\n','Calendar': 'CalendarWidth=340\n',
-                'Processes': 'ProcessesWidth=340\n','DiskIO': 'DiskIOWidth=340\n','Binary': 'BinaryWidth=340\n',
-                'Progress': 'ProgressWidth=340\n','Analog': 'AnalogWidth=340\nAnalogSeconds=1\n',
+                'Focus': 'FocusWidth=340\n','GPU': 'GPUWidth=340\n','Calendar': 'CalendarWidth=340\nWeekStart=Mon\n','Clock': 'WeekStart=Mon\n',
+                'Processes': 'ProcessesWidth=340\n','DiskIO': 'DiskIOWidth=340\n','Binary': 'BinaryWidth=340\n','Battery': 'BatteryRange=360\n',
+                'Progress': 'ProgressWidth=340\nWeekStart=Mon\n','Analog': 'AnalogWidth=340\nAnalogSeconds=1\n',
                 'SunMoon': 'SunMoonWidth=340\nWeatherLatitude=0\nWeatherLongitude=0\nWeatherCity=\n',
                 'StatusBar': 'StatusBarWidth=800\nPingHost=1.1.1.1\nNetworkInterface=Best\n'}
     variants = [('Battery','Battery',500,280,battery),('Battery','Compact',360,168,battery),
@@ -183,11 +183,12 @@ Group=NerdWidgetsDrawing
                 ('Vitals','Vitals',340,270,vitals),('Vitals','VitalsCompact',340,140,vitals),
                 ('Clock','Clock',340,220,''),('Clock','ClockCompact',340,120,''),('Shortcuts','Shortcuts',500,136,''),
                 ('Audio','Audio',340,190,audio),('Spectrum','Spectrum',340,220,spectrum),
-                ('Cores','Cores',340,260,cores),('SysInfo','SysInfo',340,260,sysinfo),
-                ('Diagnostics','Diagnostics',340,280,diagnostics),
-                ('Calendar','Calendar',340,300,''),('Processes','Processes',340,330,processes),('Processes','ProcessesMap',340,330,processes),
-                ('DiskIO','DiskIO',340,300,diskio),('Binary','Binary',340,270,''),('Binary','Compact',340,210,''),('GPU','GPU',340,330,gpu),('Focus','Focus',340,262,''),
-                ('Countdown','Countdown',340,250,countdown),('Weather','Weather',340,330,weather),
+                ('Cores','Cores',340,260,cores),('Cores','CoresRings',340,260,cores),('SysInfo','SysInfo',340,260,sysinfo),
+                ('Diagnostics','Diagnostics',340,280,diagnostics),('Diagnostics','DiagnosticsCompact',340,140,diagnostics),
+                ('Calendar','Calendar',340,300,''),('Calendar','CalendarWeek',340,160,''),('Processes','Processes',340,330,processes),('Processes','ProcessesMap',340,330,processes),
+                ('DiskIO','DiskIO',340,300,diskio),('DiskIO','DiskIODrives',340,200,diskio),('Binary','Binary',340,270,''),('Binary','Compact',340,210,''),('GPU','GPU',340,330,gpu),('GPU','GPUCompact',340,120,gpu),('Focus','Focus',340,262,''),('Focus','FocusCompact',340,140,''),
+                ('Countdown','Countdown',340,250,countdown),('Countdown','CountdownCompact',340,130,countdown),
+                ('Weather','Weather',340,330,weather),('Weather','WeatherCompact',340,130,weather),
                 ('Progress','Progress',340,270,''),('SunMoon','SunMoon',340,330,location),
                 ('Analog','Analog',340,260,''),('StatusBar','StatusBar',800,46,statusbar),
                 ('Settings','Settings',500,642,'')]

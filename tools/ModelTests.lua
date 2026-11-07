@@ -52,6 +52,10 @@ function Initialize()
     check(math.abs(pr.week.fraction-3.5/7)<1e-6 and math.abs(pr.month.fraction-.5/31)<1e-6,'Week and month progress')
     check(pr.yearDays==365 and pr.monthDays==31 and math.abs(pr.year.fraction-.5/365)<1e-6,'Year progress')
     check(M.progress(os.time({year=2028,month=2,day=10,hour=0})).monthDays==29,'Leap February')
+    local ps=M.progress(os.time({year=2026,month=1,day=1,hour=12,min=0,sec=0}),0)
+    check(ps.weekday==5 and math.abs(ps.week.fraction-4.5/7)<1e-6,'Sunday-first week progress')
+    check(M.weekStart('Sun')==0 and M.weekStart('sunday')==0 and M.weekStart('Mon')==1 and M.weekStart('')==1,'Week start setting')
+    check(M.weekColumn(1,0)==0 and M.weekColumn(1,1)==6 and M.weekColumn(2,1)==0,'Week columns')
     local function near(h,expect) return h and math.abs(h-expect)<10/60 end
     -- Kochi, 7 Nov 2026 (IST): about 06:13 / 17:58.
     local kr,ks=M.sunTimes(9.93,76.27,311,5.5)
@@ -80,13 +84,22 @@ function Initialize()
     check(#tiles==6 and not seen[6] and math.abs(area-240000)<1e-3 and inBounds,'Treemap fills the area, skips zeros')
     check(math.abs(tiles[1].w*tiles[1].h-240000*6/22)<1e-3,'Treemap areas are proportional')
     check(#M.treemap({0,0},0,0,10,10)==0,'Empty treemap')
+    check(M.batteryRange(25)==30 and M.batteryRange(1000)==1080 and M.batteryRange('x')==360 and M.batteryRange(5000)==1440,'Battery ranges snap')
+    local hist={}
+    for k=0,30 do hist[#hist+1]={t=k*60,v=50+k*.5} end
+    local rates=M.chargeRates(hist)
+    check(#rates>0 and math.abs(rates[#rates].v-30)<1e-6 and rates[1].t>=300,'Charge rate, 30 %/h')
+    hist[#hist+1]={t=31*60+600,v=70}
+    check(M.chargeRates(hist)[#M.chargeRates(hist)].t<31*60+600,'A gap restarts the rate window')
     local cases=0
     -- entry, kind, variant, height
     local entries={{'Battery','Battery','Battery',280},{'Compact','Battery','Compact',168},{'Network','Network','Network',230},
       {'NetworkCompact','Network','Compact',150},{'Vitals','Vitals','Vitals',270},{'VitalsCompact','Vitals','Compact',140},
       {'Clock','Clock','Clock',220},{'ClockCompact','Clock','Compact',120},{'Shortcuts','Shortcuts','Shortcuts',136},
       {'Audio','Audio','Audio',190},{'Spectrum','Spectrum','Spectrum',220},{'Cores','Cores','Cores',260},{'SysInfo','SysInfo','SysInfo',260},
-      {'Diagnostics','Diagnostics','Diagnostics',280},{'Calendar','Calendar','Calendar',300},{'Processes','Processes','Processes',330},{'ProcessesMap','Processes','ProcessesMap',330},
+      {'Diagnostics','Diagnostics','Diagnostics',280},{'Calendar','Calendar','Calendar',300},{'CalendarWeek','Calendar','CalendarWeek',160},{'WeatherCompact','Weather','Compact',130},
+      {'GPUCompact','GPU','Compact',120},{'CoresRings','Cores','CoresRings',260},{'FocusCompact','Focus','Compact',140},
+      {'CountdownCompact','Countdown','Compact',130},{'DiskIODrives','DiskIO','DiskIODrives',200},{'DiagnosticsCompact','Diagnostics','Compact',140},{'Processes','Processes','Processes',330},{'ProcessesMap','Processes','ProcessesMap',330},
       {'DiskIO','DiskIO','DiskIO',300},{'Binary','Binary','Binary',270},{'BinaryCompact','Binary','Compact',210},{'GPU','GPU','GPU',330},
       {'Focus','Focus','Focus',262},{'Countdown','Countdown','Countdown',250},{'Weather','Weather','Weather',330},
       {'Progress','Progress','Progress',270},{'SunMoon','SunMoon','SunMoon',330},{'SunMoonSouth','SunMoon','SunMoon',330},
@@ -104,11 +117,12 @@ function Initialize()
             Theme=(theme=='Blacks' or theme=='Instrument') and 'Dark' or theme,
             -- Label/number sizes vary with the flag case: default, the user's 105/70, and both extremes.
             TextScale=({[1]='1',[8]='1.05',[128]='1.5',[255]='0.7'})[flags],NumberScale=({[1]='1',[8]='0.7',[128]='0.5',[255]='1.5'})[flags],Style=(theme=='Blacks' or theme=='Instrument') and theme or 'Expressive',Scale=tostring(scale),Palette=({'Sage','Teal','Rose','Amber','Slate','Blue'})[(width+flags)%6+1],CoreCount=flags>=128 and '32' or '8',PingHost='1.1.1.1',
+            BatteryRange=({[1]='30',[8]='1440',[128]='360',[255]='60'})[flags],
             WeatherEnabled=flags==255 and '0' or '1',WeatherCity='Test City',
             -- Sun & Moon: unset, tropical, polar (night or midnight sun by date), and the southern hemisphere.
             WeatherLatitude=flags==255 and '0' or entry=='SunMoonSouth' and '-33.87' or flags==128 and '78.2' or '9.93',
             WeatherLongitude=flags==255 and '0' or entry=='SunMoonSouth' and '151.21' or flags==128 and '15.6' or '76.27',
-            AnalogSeconds=flags==8 and '0' or '1',
+            AnalogSeconds=flags==8 and '0' or '1',WeekStart=(flags==8 or flags==128) and 'Sun' or 'Mon',
             CountdownTitle='Release',CountdownDate=flags==255 and 'soon' or (flags==128 and '2020-01-01 00:00' or '2027-01-01 00:00'),CountdownFrom='2026-11-01 00:00'}
           local readings={BatteryFlags=flags,BatteryPercent=81,BatteryAC=0,BatteryLife=-1,
             CPU=42,CPU0=42,RAM=8*1073741824,RAMTotal=16*1073741824,DiskTotal=512*1073741824,DiskFree=200*1073741824,
@@ -135,7 +149,23 @@ function Initialize()
           function mock:Bang(bang,section,key,value)
             if bang=='!SetOption' then options[section]=options[section] or {};options[section][key]=value end
           end
-          local env=setmetatable({SKIN=mock,io={open=function() return nil end}},{__index=_G})
+          -- Battery reads a synthetic day of history: a sine-shaped level, charging every
+          -- other three hours, a 20-minute gap, and old two-column rows.
+          local function fakeHistory()
+            local rows,now0={},os.time()
+            for k=1440,0,-1 do
+              if k<200 or k>220 then
+                local c=math.floor(k/180)%2
+                local v=math.floor(55+40*math.sin(k/90))
+                rows[#rows+1]=k>1200 and string.format('%d\t%d',now0-k*60,v) or string.format('%d\t%d\t%d',now0-k*60,v,c)
+              end
+            end
+            local i=0
+            return {lines=function() return function() i=i+1;return rows[i] end end,close=function() end}
+          end
+          local env=setmetatable({SKIN=mock,io={open=function(path,mode)
+            if kind=='Battery' and flags~=255 and mode~='w' and tostring(path):match('battery%.tsv$') then return fakeHistory() end
+            return nil end}},{__index=_G})
           local script=assert(loadfile(root..'Widget.lua'));setfenv(script,env);script()
           env.Initialize();env.Update();env.Update()
           if entry:match('Search$') then
@@ -158,7 +188,7 @@ function Initialize()
           end
           for name in pairs(options) do
             local n=tonumber(name:match('^Text(%d+)$') or name:match('^SliderHit(%d+)$'))
-            local limit=name:match('^Text') and 80 or 64
+            local limit=name:match('^Text') and 100 or 64
             check(not n or n<=limit,'Meter pool exceeded: '..kind..' '..name)
           end
           local cw,ch=tonumber(options.Canvas.W),tonumber(options.Canvas.H)
@@ -198,7 +228,8 @@ function Initialize()
               end
             end
           end
-          if kind=='Cores' then
+          -- Cores Rings shows load as rings; numbers appear only when a ring is big enough.
+          if kind=='Cores' and variant~='CoresRings' then
             local n=tonumber(vars.CoreCount)
             local shown=0
             for name,o in pairs(options) do if name:match('^Text') and o.Hidden=='0' then shown=shown+1 end end

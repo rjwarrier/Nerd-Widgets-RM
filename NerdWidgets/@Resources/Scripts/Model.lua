@@ -55,6 +55,33 @@ function M.append(history, now, value, interval)
     end
     return false
 end
+-- Battery graph ranges in minutes; any other value snaps to the nearest one.
+M.batteryRanges = {30, 60, 180, 360, 720, 1080, 1440}
+function M.batteryRange(minutes)
+    minutes = tonumber(minutes) or 360
+    local best = M.batteryRanges[1]
+    for _, r in ipairs(M.batteryRanges) do
+        if math.abs(r - minutes) < math.abs(best - minutes) then best = r end
+    end
+    return best
+end
+-- Charge rate in % per hour at each sample, over a trailing window (default 10 minutes).
+-- Whole-percent readings make short windows jumpy, so a sample needs at least half a
+-- window of unbroken history behind it (gaps over 150 s break the history).
+function M.chargeRates(history, window)
+    window = window or 600
+    local out, start = {}, 1
+    for i = 1, #history do
+        if i > 1 and history[i].t - history[i - 1].t > 150 then start = i end
+        local j = start
+        while j < i and history[i].t - history[j + 1].t >= window do j = j + 1 end
+        local dt = history[i].t - history[j].t
+        if dt >= window / 2 then
+            out[#out + 1] = {t=history[i].t, v=(history[i].v - history[j].v) / dt * 3600}
+        end
+    end
+    return out
+end
 function M.ping(ms)
     local n = tonumber(ms)
     if not n or n < 0 or n >= 30000 then return '--', 'Timeout' end
@@ -165,12 +192,18 @@ function M.weatherParse(json)
     end
     return w
 end
--- Fractions of the current day, week (Monday first), month and year, with their bounds.
+-- WeekStart setting: 0 for Sunday, 1 for Monday (the default).
+function M.weekStart(value)
+    return tostring(value or ''):lower():sub(1, 3) == 'sun' and 0 or 1
+end
+-- Column (0-6) of a weekday in a week that starts on `start`; wday is os.date's 1 = Sunday.
+function M.weekColumn(wday, start) return (wday - 1 - (start or 1)) % 7 end
+-- Fractions of the current day, week, month and year, with their bounds.
 -- Bounds come from os.time on calendar fields, so DST days are 23 or 25 hours long.
-function M.progress(now)
+function M.progress(now, start)
     local t = os.date('*t', now)
     local function at(y, mo, d) return os.time({year=y, month=mo, day=d, hour=0, min=0, sec=0}) end
-    local wd = (t.wday + 5) % 7
+    local wd = M.weekColumn(t.wday, start)
     local spans = {
         day={at(t.year, t.month, t.day), at(t.year, t.month, t.day + 1)},
         week={at(t.year, t.month, t.day - wd), at(t.year, t.month, t.day - wd + 7)},

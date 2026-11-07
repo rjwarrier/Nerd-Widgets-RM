@@ -245,63 +245,132 @@ end
 local function persist()
     local file=io.open(historyFile..'.tmp','w')
     if not file then return end
-    for _,p in ipairs(history) do file:write(p.t,'\t',p.v,'\n') end
+    -- Columns: time, level, 1 while charging.
+    for _,p in ipairs(history) do file:write(p.t,'\t',p.v,'\t',p.c or 0,'\n') end
     file:close()
     -- Same skin owns the history file; variants in one config cannot run together.
     os.remove(historyFile)
     os.rename(historyFile..'.tmp',historyFile)
 end
+function SetBatteryRange(minutes)
+    minutes=M.batteryRange(minutes)
+    SKIN:Bang('!SetVariable','BatteryRange',tostring(minutes))
+    SKIN:Bang('!WriteKeyValue','Variables','BatteryRange',tostring(minutes),var('@')..'Settings.inc')
+    SKIN:Bang('!UpdateMeasure','MeasureRenderer')
+    SKIN:Bang('!UpdateMeterGroup','NerdWidgetsDrawing')
+    SKIN:Bang('!Redraw')
+end
+local rangeLabels={[30]='30M',[60]='1H',[180]='3H',[360]='6H',[720]='12H',[1080]='18H',[1440]='24H'}
 local function battery(now)
     local b=M.battery(measure('BatteryFlags'),measure('BatteryPercent'),measure('BatteryAC'),measure('BatteryLife'))
-    local hours=M.clamp(num('HistoryHours',6),1,24)
-    history=M.trim(history,now,hours)
-    if b.valid and M.append(history,now,b.percent,60) then persist() end
+    -- A full day is always kept, so any range can be shown at once.
+    history=M.trim(history,now,24)
+    if b.valid and M.append(history,now,b.percent,60) then
+        history[#history].c=b.charging and 1 or 0
+        persist()
+    end
     if not b.valid then sessionStart=nil;sessionLevel=nil;sessionAC=nil
     elseif sessionAC~=b.ac then sessionAC=b.ac;sessionStart=now;sessionLevel=b.percent end
     local compact=variant=='Compact'
-    local top=compact and 44 or 48
-    local chipX=compact and W-137 or math.max(218,W-258)
     local reading=b.valid and string.format('%.0f%%',b.percent) or '--'
-    local numberWidth=chipX-34
-    local numberSize=compact and 58 or 72
     local numberFont=var('NumberFont','JetBrains Mono')
-    local effective=fontSize(reading,numberSize,numberWidth,'number',numberFont)
-    local statusY=math.max(top+effective*1.4+6,57+chipHeight()+10)
-    local graphY=statusY+labelHeight(12)+14
-    local footerHeight=labelHeight(11)+16
-    H=(compact and statusY+labelHeight(12)+22 or graphY+78+footerHeight)
-    header('BATTERY')
-    hero(reading,22,top,numberSize,C.accent,numberWidth,'["ms-settings:batterysaver"]',nil,numberFont)
     if compact then
+        local top=44
+        local chipX=W-137
+        local numberWidth=chipX-34
+        local effective=fontSize(reading,58,numberWidth,'number',numberFont)
+        local statusY=math.max(top+effective*1.4+6,57+chipHeight()+10)
+        H=statusY+labelHeight(12)+22
+        header('BATTERY')
+        hero(reading,22,top,58,C.accent,numberWidth,'["ms-settings:batterysaver"]',nil,numberFont)
         chip('SOURCE',b.ac==1 and 'Plugged in' or b.ac==0 and 'Battery' or 'Unknown',chipX,57,113)
-    else
-        local cw=(W-chipX-32)/2
-        chip('POWER',b.charging and 'Charging' or b.ac==1 and 'AC power' or b.ac==0 and 'Battery' or 'Unknown',chipX,57,cw)
-        chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX+cw+8,57,cw)
+        circle(29,statusY+10*T,3,b.valid and C.accent or C.muted)
+        text(b.status,39,statusY,12,C.muted,W-64)
+        return
     end
-    circle(29,statusY+10*T,3,b.valid and C.accent or C.muted)
-    text(b.status,39,statusY,12,C.muted,W-64)
-    if compact then return end
-    local gx,gy,gw,gh=24,graphY,W-48,H-graphY-footerHeight
-    graphPanel(gx,gy,gw,gh,14)
-    local px,py,pw,ph=gx+12,gy+12,gw-24,gh-24
+    -- Full card: the status sits in the header, so the reading, chips and graph stack tightly.
+    local range=M.batteryRange(num('BatteryRange',num('HistoryHours',6)*60))
+    local span=range*60
+    local top=44
+    local chipX=math.max(218,W-258)
+    local numberWidth=chipX-34
+    local effective=fontSize(reading,56,numberWidth,'number',numberFont)
+    header('BATTERY',string.upper(b.status))
+    hero(reading,22,top,56,C.accent,numberWidth,'["ms-settings:batterysaver"]',nil,numberFont)
+    local cw=(W-chipX-32)/2
+    chip('POWER',b.charging and 'Charging' or b.ac==1 and 'AC power' or b.ac==0 and 'Battery' or 'Unknown',chipX,50,cw)
+    chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX+cw+8,50,cw)
+    local gx,gy,gw,gh=24,math.max(top+effective*1.4,50+chipHeight())+10,W-48,74
+    graphPanel(gx,gy,gw,gh,12)
+    local px,py,pw,ph=gx+10,gy+10,gw-20,gh-20
+    local t0=now-span
+    local function X(t) return px+pw*M.clamp((t-t0)/span,0,1) end
+    local visible={}
+    for _,p in ipairs(history) do if p.t>=t0-60 then visible[#visible+1]=p end end
+    -- Charging sessions: shaded bands behind the lines.
+    local bandStart
+    for i,p in ipairs(visible) do
+        local charging=p.c==1
+        if charging and not bandStart then bandStart=p.t end
+        local nextP=visible[i+1]
+        local ends=bandStart and (not nextP or nextP.c~=1 or nextP.t-p.t>150)
+        if ends then
+            local x1,x2=X(bandStart),X(math.min(now,p.t+60))
+            if x2-x1>=1 then rect(x1,py,x2-x1,ph,2,C.accent..',45') end
+            bandStart=nil
+        end
+    end
     for _,v in ipairs({0,50,100}) do line(px,py+ph*(1-v/100),px+pw,py+ph*(1-v/100),C.border..',90',1) end
-    local segment={}
-    local last=nil
-    for _,p in ipairs(history) do
-        if last and p.t-last>150 then path(segment,C.accent,2.2);segment={} end
-        segment[#segment+1]={px+pw*(p.t-(now-hours*3600))/(hours*3600),py+ph*(1-p.v/100)}
-        last=p.t
+    -- Long ranges hold up to 1,440 samples; draw about one point per two pixels.
+    local step=math.max(1,math.ceil(#visible/math.max(1,pw/2)))
+    local function plot(list,Y,color,width)
+        local segment,last={},nil
+        for i,p in ipairs(list) do
+            if last and p.t-last>150 then path(segment,color,width);segment={} end
+            if i%step==0 or i==#list or (list[i+1] and list[i+1].t-p.t>150) or (last and p.t-last>150) then
+                segment[#segment+1]={X(p.t),Y(p.v)}
+            end
+            last=p.t
+        end
+        path(segment,color,width)
     end
-    path(segment,C.accent,2.2)
-    if #history>0 then
-        local p=history[#history]
-        circle(px+pw*(p.t-(now-hours*3600))/(hours*3600),py+ph*(1-p.v/100),3,C.accent)
+    -- Charge rate (%/h) on its own symmetric scale around a mid zero line.
+    local rates=M.chargeRates(visible)
+    local scale=20
+    for _,r in ipairs(rates) do scale=math.max(scale,math.ceil(math.abs(r.v)/10)*10) end
+    if #rates>1 then
+        line(px,py+ph/2,px+pw,py+ph/2,C.secondary..',70',1)
+        plot(rates,function(v) return py+ph*(.5-M.clamp(v/scale,-1,1)/2) end,C.secondary,1.6)
+        text(string.format('±%d%%/H',scale),px+pw,gy+2,8,C.secondary,70,nil,'Right')
     end
-    if #history<2 then text(b.valid and 'Collecting history · one sample / minute' or 'History starts when a battery is available',gx+12,gy+gh/2-9,11,C.muted,gw-24) end
-    text(tostring(hours)..'H HISTORY',24,H-footerHeight+8,10,C.muted,120)
+    plot(visible,function(v) return py+ph*(1-v/100) end,C.accent,2.2)
+    if #visible>0 then
+        local p=visible[#visible]
+        circle(X(p.t),py+ph*(1-p.v/100),3,C.accent)
+    end
+    if #visible<2 then
+        text(b.valid and 'Collecting history · one sample / minute' or 'History starts when a battery is available',
+            gx+12,gy+gh/2-labelHeight(11)/2,11,C.muted,gw-24)
+    end
+    -- Range buttons.
+    local rangeY=gy+gh+8
+    local colW=(W-48)/#M.batteryRanges
+    local pillH=labelHeight(10)+4
+    for i,r in ipairs(M.batteryRanges) do
+        local x=24+(i-1)*colW
+        if r==range then rect(x+2,rangeY,colW-4,pillH,pillH/2,C.chip) end
+        text(rangeLabels[r],x+colW/2,rangeY+2,10,r==range and C.accent or C.muted,colW-6,action('SetBatteryRange('..r..')'),'Center')
+    end
+    local footerY=rangeY+pillH+8
     local delta=b.valid and sessionLevel and string.format('%+.0f%%',b.percent-sessionLevel) or '--'
-    text(delta..'  ·  '..(sessionStart and M.duration(now-sessionStart)..' observed' or 'No readings'),W-24,H-footerHeight+8,11,C.muted,W-180,nil,'Right')
+    text(delta..' · '..(sessionStart and M.duration(now-sessionStart)..' observed' or 'No readings'),24,footerY,10,C.muted,W-230)
+    -- Legend, right-aligned: level, rate, charging band.
+    local cwid=8*.6*10*T+2
+    text('CHARGING',W-24,footerY,10,C.muted,cwid+4,nil,'Right')
+    rect(W-24-cwid-14,footerY+labelHeight(10)/2-4,9,9,2,C.accent..',90')
+    text('%/H',W-24-cwid-22,footerY,10,C.secondary,34*T,nil,'Right')
+    text('LEVEL',W-24-cwid-22-34*T-8,footerY,10,C.accent,40*T,nil,'Right')
+    H=footerY+labelHeight(10)+12
 end
 local function series(values,value,now)
     if values[#values] and values[#values].t==now then return end
@@ -376,16 +445,24 @@ local function network(now)
     H=(y+12)
 end
 local function diskio(now)
-    local y=ratePair('DISK I/O','READ','WRITE',math.max(0,measure('DiskRead')),math.max(0,measure('DiskWrite')),
-        reads,writes,now,'ALL DISKS · 60 SECONDS')+14
+    local drivesOnly=variant=='DiskIODrives'
+    local y
+    if drivesOnly then
+        -- Disk I/O Drives: every fixed drive's space, no throughput graph.
+        header('DRIVES')
+        y=50
+    else
+        y=ratePair('DISK I/O','READ','WRITE',math.max(0,measure('DiskRead')),math.max(0,measure('DiskWrite')),
+            reads,writes,now,'ALL DISKS · 60 SECONDS')+14
+    end
     local shown=0
     for letter in ('CDEFGHIJ'):gmatch('.') do
         local total=measure('Total'..letter);local free=measure('Free'..letter)
-        if total>0 and shown<4 then
+        if total>0 and shown<(drivesOnly and 8 or 4) then
             shown=shown+1
             local used=M.clamp(1-free/total,0,1)
-            text(letter..':',24,y,11,C.text,40)
-            text(string.format('%s free of %s',M.bytes(free),M.bytes(total)),W-24,y,11,C.muted,W-96,nil,'Right')
+            text(letter..':'..(drivesOnly and string.format(' %.0f%%',used*100) or ''),24,y,11,C.text,drivesOnly and 90 or 40)
+            text(string.format('%s free of %s',M.bytes(free),M.bytes(total)),W-24,y,11,C.muted,W-(drivesOnly and 140 or 96),nil,'Right')
             y=y+labelHeight(11)+2
             -- Nearly full drives switch to the secondary color as a gentle warning.
             bar(24,y,W-48,4,used,used>.9 and C.secondary or C.accent)
@@ -476,6 +553,21 @@ local function gpuCard(now)
     local load=M.clamp(measure('GPULoad'),0,100)
     series(gpuList,load,now)
     local nf=var('NumberFont','JetBrains Mono')
+    if variant=='Compact' then
+        -- GPU Mini: the load reading beside its 60-second graph.
+        local name=measureString('GPUName','')
+        name=(name=='' or name=='0') and 'GPU' or M.cpuName(name)
+        header('GPU',string.upper(name))
+        local top=46
+        local rowH=36*N*1.4
+        local numberW=96
+        hero(string.format('%.0f%%',load),22,top,36,C.accent,numberW,nil,nil,nf)
+        local gx=24+numberW+8
+        graphPanel(gx,top+2,W-24-gx,rowH-4,9)
+        spark(gpuList,gx+6,top+7,W-24-gx-12,rowH-14,C.accent,100,now)
+        H=top+rowH+14
+        return
+    end
     header('GPU MONITOR')
     local top=50
     local numberWidth=110
@@ -575,6 +667,19 @@ local function focusCard(now)
     local total=d[focus.mode]
     local left=M.clamp(focus.running and focus.ends-now or focus.left or total,0,total)
     local color=focus.mode=='work' and C.accent or C.secondary
+    if variant=='Compact' then
+        -- Focus Mini: time left, one Start/Pause button, and a thin progress bar.
+        header('FOCUS',focusNames[focus.mode])
+        local top=46
+        local rowH=36*N*1.4
+        local bw=104
+        hero(M.mmss(left),22,top,36,color,W-48-bw-8,nil,nil,var('NumberFont','JetBrains Mono'))
+        button(focus.running and 'Pause' or left<total and 'Resume' or 'Start',W-24-bw,top+(rowH-34)/2,bw,focus.running,'FocusToggle()')
+        local barY=top+math.max(rowH,34)+6
+        bar(24,barY,W-48,4,1-left/total,color)
+        H=barY+(look=='Instrument' and 6 or 4)+14
+        return
+    end
     header('FOCUS TIMER',focus.running and 'RUNNING' or left<total and 'PAUSED' or 'READY')
     local r=56
     local cx,cy=32+r,58+r
@@ -629,6 +734,25 @@ local function countdown(now)
     local nf=var('NumberFont','JetBrains Mono')
     local title=var('CountdownTitle','New Year')
     local target=M.parseDate(var('CountdownDate',''))
+    if variant=='Compact' then
+        -- Countdown Mini: the title and days left on one line over a thin bar.
+        header('COUNTDOWN')
+        local top=46
+        local rowH=32*N*1.4
+        local dayW=120
+        local left=target and target-now
+        local days=target and tostring(math.floor(math.abs(left)/86400))..'d' or '--'
+        hero(days,W-24,top,32,target and left>0 and C.accent or C.muted,dayW,nil,'Right',nf)
+        local tw=W-48-dayW-8
+        text(title~='' and title or 'Untitled',24,top+(rowH-labelHeight(13)-labelHeight(10))/2,13,C.text,tw,action("EditCountdown('title')"))
+        local sub=countdownError or (target and (left>0 and os.date('%d %b %Y',target) or 'Done') or 'Set a date')
+        text(sub,24,top+(rowH-labelHeight(13)-labelHeight(10))/2+labelHeight(13),10,countdownError and C.secondary or C.muted,tw,action("EditCountdown('date')"))
+        local barY=top+rowH+6
+        local from=M.parseDate(var('CountdownFrom',''))
+        bar(24,barY,W-48,4,target and from and target>from and (now-from)/(target-from) or 0,C.accent)
+        H=barY+(look=='Instrument' and 6 or 4)+14
+        return
+    end
     header('COUNTDOWN')
     text(title~='' and title or 'Untitled',24,46,15,C.text,W-48,action("EditCountdown('title')"))
     local y=46+labelHeight(15)+6
@@ -816,6 +940,23 @@ local function weatherCard(now)
     local unit=var('WeatherTempUnit','celsius')=='fahrenheit' and 'F' or 'C'
     local label,kind=M.weatherInfo(w.code)
     local top=46
+    if variant=='Compact' then
+        -- Weather Mini: icon, temperature, condition and today's range on one row.
+        local rowH=40*N*1.4
+        local icon=math.min(44,rowH)
+        weatherIcon(kind,24+icon/2,top+rowH/2,icon,w.day)
+        local tx=24+icon+10
+        local numberW=(W-24-tx)*.5
+        hero(string.format('%.0f°',w.temp),tx,top,40,C.accent,numberW,nil,nil,var('NumberFont','JetBrains Mono'))
+        local today=w.days[1] or {}
+        local rx=tx+numberW+6
+        local stack=labelHeight(12)+labelHeight(10)
+        local sy=top+math.max(0,(rowH-stack)/2)
+        text(label,W-24,sy,12,C.text,W-24-rx,nil,'Right')
+        text(string.format('H %s° · L %s°',today.high and string.format('%.0f',today.high) or '--',today.low and string.format('%.0f',today.low) or '--'),W-24,sy+labelHeight(12),10,C.muted,W-24-rx,nil,'Right')
+        H=top+math.max(rowH,stack)+14
+        return
+    end
     local iconSize=math.min(78,58*N*1.4)
     hero(string.format('%.0f°%s',w.temp,unit),22,top,58,C.accent,W-60-iconSize,nil,nil,var('NumberFont','JetBrains Mono'))
     weatherIcon(kind,W-24-iconSize/2,top+iconSize/2+4,iconSize,w.day)
@@ -854,7 +995,61 @@ function CalendarShift(delta)
     SKIN:Bang('!UpdateMeterGroup','NerdWidgetsDrawing')
     SKIN:Bang('!Redraw')
 end
+-- WeekStart is shared by Calendar, Day Progress and Clock; clicking the weekday row flips it.
+function ToggleWeekStart()
+    SKIN:Bang('!WriteKeyValue','Variables','WeekStart',M.weekStart(var('WeekStart','Mon'))==1 and 'Sun' or 'Mon',var('@')..'Settings.inc')
+    SKIN:Bang('!RefreshGroup','NerdWidgets')
+end
+local dayLetters={'S','M','T','W','T','F','S'}
+-- One weekday letter per column, weekends in the secondary color; the row toggles the week start.
+local function weekdayRow(y,colW)
+    local start=M.weekStart(var('WeekStart','Mon'))
+    for col=0,6 do
+        local dow=(start+col)%7
+        text(dayLetters[dow+1],24+(col+.5)*colW,y,10,(dow==0 or dow==6) and C.secondary or C.muted,colW,action('ToggleWeekStart()'),'Center')
+        texts[#texts].ToolTipText=start==1 and 'Start weeks on Sunday' or 'Start weeks on Monday'
+    end
+    return start
+end
+-- Calendar Week: this week's seven days in one strip; ‹ › move a week at a time.
+local function calendarWeek()
+    local now=os.time()
+    local start=M.weekStart(var('WeekStart','Mon'))
+    local t=os.date('*t',now)
+    local first=os.time({year=t.year,month=t.month,day=t.day-M.weekColumn(t.wday,start)+7*calOffset,hour=12})
+    local last=os.time({year=t.year,month=t.month,day=t.day-M.weekColumn(t.wday,start)+7*calOffset+6,hour=12})
+    header('THIS WEEK')
+    local ft=os.date('*t',first)
+    local title=os.date('%b',first)==os.date('%b',last) and os.date('%B %Y',first) or os.date('%b',first)..' – '..os.date('%b %Y',last)
+    text(string.upper(title),24,46,13,C.text,W-120,calOffset~=0 and action('CalendarShift(0)') or nil)
+    text('‹',W-82,38,22,C.accent,30,action('CalendarShift(-1)'),'Center',nil,'fixed')
+    text('›',W-44,38,22,C.accent,30,action('CalendarShift(1)'),'Center',nil,'fixed')
+    local colW=(W-48)/7
+    local labelY=46+labelHeight(13)+8
+    weekdayRow(labelY,colW)
+    local dayY=labelY+labelHeight(10)+4
+    local th=labelHeight(15)
+    local instrument=look=='Instrument'
+    for col=0,6 do
+        local d=os.date('*t',os.time({year=ft.year,month=ft.month,day=ft.day+col,hour=12}))
+        local cx=24+(col+.5)*colW
+        local weekend=d.wday==1 or d.wday==7
+        local color=weekend and C.secondary or C.text
+        if d.year==t.year and d.yday==t.yday then
+            if instrument then rect(cx-colW/2+3,dayY-3,colW-6,th+2,6,C.text)
+            else circle(cx,dayY+th/2-2,math.min(16,colW/2-2),C.accent) end
+            color=C.surface
+        end
+        text(instrument and string.format('%02d',d.day) or tostring(d.day),cx,dayY,15,color,colW,nil,'Center')
+    end
+    local footerY=dayY+th+12
+    text(string.format('ISO WEEK %02d',M.isoWeek(os.date('*t',first+86400*((start==0) and 1 or 0)))),24,footerY,10,C.muted,W-144)
+    if calOffset~=0 then text('Today ↺',W-24,footerY,11,C.accent,100,action('CalendarShift(0)'),'Right')
+    else text('Date ↗',W-24,footerY,11,C.muted,100,'["ms-settings:dateandtime"]','Right') end
+    H=footerY+labelHeight(10)+12
+end
 local function calendar()
+    if variant=='CalendarWeek' then calendarWeek() return end
     local today=os.date('*t')
     local y,mo=today.year,today.month+calOffset
     while mo<1 do mo=mo+12;y=y-1 end
@@ -862,16 +1057,15 @@ local function calendar()
     local first=os.time({year=y,month=mo,day=1,hour=12})
     -- Day 0 of the next month normalizes to this month's last day.
     local days=tonumber(os.date('%d',os.time({year=y,month=mo+1,day=0,hour=12})))
-    local lead=(tonumber(os.date('%w',first))+6)%7
+    local start=M.weekStart(var('WeekStart','Mon'))
+    local lead=M.weekColumn(tonumber(os.date('%w',first))+1,start)
     header('CALENDAR')
     text(string.upper(os.date('%B %Y',first)),24,46,15,C.text,W-120,calOffset~=0 and action('CalendarShift(0)') or nil)
     text('‹',W-82,40,22,C.accent,30,action('CalendarShift(-1)'),'Center',nil,'fixed')
     text('›',W-44,40,22,C.accent,30,action('CalendarShift(1)'),'Center',nil,'fixed')
     local colW=(W-48)/7
     local labelY=46+labelHeight(15)+8
-    for i,n in ipairs({'M','T','W','T','F','S','S'}) do
-        text(n,24+(i-.5)*colW,labelY,10,i>5 and C.secondary or C.muted,colW,nil,'Center')
-    end
+    weekdayRow(labelY,colW)
     local gridY=labelY+labelHeight(10)+4
     local rowH=math.max(28,labelHeight(12)+8)
     local isToday=calOffset==0
@@ -881,7 +1075,8 @@ local function calendar()
         local cell=lead+d-1
         local cx=24+(cell%7+.5)*colW
         local cy=gridY+math.floor(cell/7)*rowH
-        local color=cell%7>4 and C.secondary or C.text
+        local dow=(start+cell%7)%7
+        local color=(dow==0 or dow==6) and C.secondary or C.text
         if isToday and d==today.day then
             -- Instrument marks today with a light box, as the phone calendar does.
             if instrument then rect(cx-colW/2+3,cy-3,colW-6,th+2,6,C.text)
@@ -959,7 +1154,7 @@ local function hm(seconds)
     return string.format('%dh %02dm',math.floor(seconds/3600),math.floor(seconds%3600/60))
 end
 local function progressCard(now)
-    local p=M.progress(now)
+    local p=M.progress(now,M.weekStart(var('WeekStart','Mon')))
     local t=os.date('*t',now)
     local nf=var('NumberFont','JetBrains Mono')
     header('DAY PROGRESS',string.upper(os.date('%a %d %b',now)))
@@ -1208,12 +1403,12 @@ local function clock()
     hero(time,22,45,74,C.accent,W-44,nil,nil,nf)
     text(string.upper(os.date('%A')),26,dayY,13,C.text,W-52)
     text(os.date('%d %B %Y'),26,dateY,12,C.muted,W-52)
-    local day=tonumber(os.date('%w'));if day==0 then day=7 end
-    local names={'M','T','W','T','F','S','S'}
+    local start=M.weekStart(var('WeekStart','Mon'))
+    local day=M.weekColumn(tonumber(os.date('%w'))+1,start)+1
     for i=1,7 do
         local x=29+(i-1)*(W-58)/6
         if i==day then circle(x,dotsY,10,C.accent) end
-        text(names[i],x,dotsY-9,10,i==day and C.surface or C.muted,22,nil,'Center',nil,'fixed')
+        text(dayLetters[(start+i-1)%7+1],x,dotsY-9,10,i==day and C.surface or C.muted,22,nil,'Center',nil,'fixed')
     end
 end
 local function shortcuts()
@@ -1314,6 +1509,36 @@ local function cores()
     local numberWidth = 110
     local chipX = 24 + numberWidth + 10
     local chipW = W - chipX - 24
+    if variant=='CoresRings' then
+        -- Cores Rings: one small ring per logical processor, its load inside.
+        header('CPU CORES',string.format('%.0f%% TOTAL',totalCpu))
+        local cols=coreCount<=4 and coreCount or coreCount<=8 and 4 or 8
+        local cellW=(W-48)/cols
+        local r=math.min(24,cellW/2-6)
+        local stroke=math.max(2.5,r*.2)
+        local cellH=2*r+stroke+8
+        local y0=50
+        for i=1,coreCount do
+            local val=M.clamp(measure('CPU'..i),0,100)
+            local cx=24+(((i-1)%cols)+.5)*cellW
+            local cy=y0+math.floor((i-1)/cols)*cellH+r+stroke/2
+            local pts={}
+            for k=0,32 do local a=-math.pi/2+k/32*2*math.pi;pts[#pts+1]={cx+math.cos(a)*r,cy+math.sin(a)*r} end
+            path(pts,C.border,stroke)
+            if val>0 then
+                local steps=math.max(2,math.ceil(32*val/100))
+                local arc={}
+                for k=0,steps do local a=-math.pi/2+k/steps*2*math.pi*val/100;arc[#arc+1]={cx+math.cos(a)*r,cy+math.sin(a)*r} end
+                path(arc,i%2==1 and C.accent or C.secondary,stroke)
+            end
+            if r>=13 then text(string.format('%.0f',val),cx,cy-labelHeight(9)/2+1,9,C.text,2*r-stroke,nil,'Center') end
+        end
+        local footerY=y0+math.ceil(coreCount/cols)*cellH+6
+        H=footerY+labelHeight(10)+12
+        text(string.format('%d THREADS · LOAD %%',coreCount),24,footerY,10,C.muted,W-144)
+        text('Details ↗',W-24,footerY,11,C.muted,100,'["taskmgr.exe"]','Right')
+        return
+    end
     header('CPU CORE HEATMAP')
     hero(string.format('%.0f%%', totalCpu), 22, top, 44, C.accent, numberWidth, nil, nil, nf)
     chip('LOGICAL CORES', string.format('%d THREADS', coreCount), chipX, top + 4, chipW)
@@ -1396,6 +1621,25 @@ local function diagnostics(now)
     local pv, pu = M.ping(p)
     local nf = var('NumberFont', 'JetBrains Mono')
     local isOnline = measure('Internet') == 1
+    if variant == 'Compact' then
+        -- Ping Mini: latency and its 60-second graph.
+        header('PING', var('PingHost', '1.1.1.1'))
+        local top = 46
+        local numberW = W / 2 - 40
+        local effective = fontSize(pv, 36, numberW, 'number', nf)
+        local drawn = hero(pv, 22, top, 36, pv == '--' and C.muted or C.accent, numberW, nil, nil, nf)
+        text(pu, math.min(22 + drawn + 6, numberW + 16), top + effective * 1.4 - labelHeight(11) - 3, 11, C.muted, 70)
+        local stack = labelHeight(12)
+        text(isOnline and 'Online' or 'Offline', W - 24, top + (36 * N * 1.4 - stack) / 2, 12,
+            isOnline and C.text or C.secondary, W / 2 - 40, nil, 'Right')
+        local graphY = top + 36 * N * 1.4 + 6
+        graphPanel(24, graphY, W - 48, 30, 9)
+        local peak = 50
+        for _, pt in ipairs(pingList) do peak = math.max(peak, pt.v) end
+        spark(pingList, 30, graphY + 5, W - 60, 20, C.accent, peak, now)
+        H = graphY + 30 + 14
+        return
+    end
     local chipW = (W - 56) / 2
     local chipH = chipHeight()
     local chipX2 = W / 2 + 4
@@ -1498,9 +1742,12 @@ local function settings()
     text('ADD TO DESKTOP',26,440,10,C.muted)
     local widgetList={'Battery','Network','Vitals','Clock','Shortcuts','Audio','Cores','SysInfo','Diagnostics','Spectrum',
         'Calendar','Processes','DiskIO','Binary','GPU','Focus','Countdown','Weather','Progress','SunMoon','Analog','StatusBar',
-        'BatteryCompact','BinaryCompact','VitalsCompact','NetworkCompact','ClockCompact','ProcessesMap'}
+        'BatteryCompact','BinaryCompact','VitalsCompact','NetworkCompact','ClockCompact','ProcessesMap',
+        'WeatherCompact','CalendarWeek','GPUCompact','CoresRings','FocusCompact','CountdownCompact','DiskIODrives','DiagnosticsCompact'}
     local labels={DiskIO='Disk I/O',Focus='Focus Timer',Progress='Day Progress',SunMoon='Sun & Moon',StatusBar='Status Bar',
-        BatteryCompact='Battery Mini',BinaryCompact='Binary Mini',VitalsCompact='Vitals Mini',NetworkCompact='Network Mini',ClockCompact='Clock Mini',ProcessesMap='Process Map'}
+        BatteryCompact='Battery Mini',BinaryCompact='Binary Mini',VitalsCompact='Vitals Mini',NetworkCompact='Network Mini',ClockCompact='Clock Mini',ProcessesMap='Process Map',
+        WeatherCompact='Weather Mini',CalendarWeek='Calendar Week',GPUCompact='GPU Mini',CoresRings='Cores Rings',FocusCompact='Focus Mini',
+        CountdownCompact='Countdown Mini',DiskIODrives='Disk Drives',DiagnosticsCompact='Ping Mini'}
     for i,v in ipairs(widgetList) do
         local row=math.floor((i-1)/4);local col=(i-1)%4
         button(labels[v] or v,24+col*115,456+row*36,107,false,"Load('"..v.."')",bh)
@@ -1569,7 +1816,9 @@ function Load(name)
         Calendar=true,Processes=true,DiskIO=true,Binary=true,GPU=true,Focus=true,Countdown=true,Weather=true,
         Progress=true,SunMoon=true,Analog=true,StatusBar=true}
     -- Compact variants share their widget's config, so loading one swaps the other.
-    local compact={BatteryCompact='Battery',BinaryCompact='Binary',VitalsCompact='Vitals',NetworkCompact='Network',ClockCompact='Clock',ProcessesMap='Processes'}
+    local compact={BatteryCompact='Battery',BinaryCompact='Binary',VitalsCompact='Vitals',NetworkCompact='Network',ClockCompact='Clock',ProcessesMap='Processes',
+        WeatherCompact='Weather',CalendarWeek='Calendar',GPUCompact='GPU',CoresRings='Cores',FocusCompact='Focus',
+        CountdownCompact='Countdown',DiskIODrives='DiskIO',DiagnosticsCompact='Diagnostics'}
     -- Older variants are Compact.ini; newer ones are <Widget>Compact.ini so they sort after the full card.
     local file={BatteryCompact='Compact.ini',BinaryCompact='Compact.ini'}
     if compact[name] then SKIN:Bang('!ActivateConfig','NerdWidgets\\'..compact[name],file[name] or name..'.ini')
@@ -1606,8 +1855,9 @@ function Initialize()
         local file=io.open(historyFile,'r')
         if file then
             for l in file:lines() do
-                local t,v=l:match('^(%d+)\t([%d%.]+)$')
-                if t and v then history[#history+1]={t=tonumber(t),v=tonumber(v)} end
+                -- Older files have no charging column.
+                local t,v,c=l:match('^(%d+)\t([%d%.]+)\t?(%d*)$')
+                if t and v then history[#history+1]={t=tonumber(t),v=tonumber(v),c=tonumber(c)} end
             end
             file:close()
         end
