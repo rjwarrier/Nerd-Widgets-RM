@@ -354,6 +354,39 @@ function M.treemap(values, x, y, w, h)
     if #row > 0 then place(row) end
     return out
 end
+-- NerdWidgets configs listed in Rainmeter.ini (UTF-16; NUL bytes are dropped first):
+-- name -> {active=index of the loaded .ini or 0, placed=has a saved window position}.
+function M.configState(ini)
+    local out = {}
+    ini = tostring(ini or ''):gsub('%z', '')
+    for name, body in ini:gmatch('%[NerdWidgets\\(%w+)%]([^%[]*)') do
+        out[name] = {active=tonumber(body:match('Active=(%d+)')) or 0,
+            placed=body:match('WindowX=') ~= nil}
+    end
+    return out
+end
+-- Column-by-column placement for cards of {w, h} within an area, with a gap around each.
+-- A card wider than a column (the Status Bar) goes along the bottom edge instead.
+function M.flowLayout(cards, areaW, areaH, gap)
+    gap = gap or 16
+    local out, x, y, colW, bottom = {}, gap, gap, 0, areaH
+    for i, c in ipairs(cards) do
+        if c.wide then
+            out[i] = {x=gap, y=math.max(gap, areaH - c.h - gap)}
+            bottom = math.min(bottom, out[i].y)
+        end
+    end
+    for i, c in ipairs(cards) do
+        if not c.wide then
+            if y + c.h > bottom - gap and y > gap then x, y, colW = x + colW + gap, gap, 0 end
+            -- Past the right edge, start again from the left rather than leave the screen.
+            if x + c.w > areaW then x = gap end
+            out[i] = {x=x, y=y}
+            y, colW = y + c.h + gap, math.max(colW, c.w)
+        end
+    end
+    return out
+end
 function M.coreCount(raw)
     local n = tonumber(raw) or 1
     return M.clamp(math.floor(n), 1, 32)

@@ -97,6 +97,12 @@ function Initialize()
     since,exact=M.onBatterySince(h({{0,2},{60,0},{600,0},{660,0}}))
     check(since==600 and not exact,'A gap makes the time a lower bound')
     check(M.onBatterySince(h({{0,0},{60,2}}))==nil and M.onBatterySince({})==nil,'Not on battery')
+    local utf16=('[NerdWidgets\\Battery]\r\nActive=2\r\nWindowX=10\r\n[NerdWidgets\\Clock]\r\nActive=0\r\n[Other\\Skin]\r\nActive=1\r\n'):gsub('.','%0\0')
+    local cs=M.configState(utf16)
+    check(cs.Battery.active==2 and cs.Battery.placed and cs.Clock.active==0 and not cs.Clock.placed and cs.Skin==nil,'Rainmeter.ini config state')
+    local lay=M.flowLayout({{w=300,h=400},{w=300,h=400},{w=300,h=400},{w=800,h=40,wide=true}},1920,1080,16)
+    check(lay[1].x==16 and lay[1].y==16 and lay[2].y==432 and lay[3].x==332 and lay[3].y==16,'Column layout')
+    check(lay[4].x==16 and lay[4].y==1024,'Wide card along the bottom')
     check(M.batteryRange(25)==30 and M.batteryRange(1000)==1080 and M.batteryRange('x')==360 and M.batteryRange(5000)==1440,'Battery ranges snap')
     local hist={}
     for k=0,30 do hist[#hist+1]={t=k*60,v=50+k*.5} end
@@ -181,6 +187,7 @@ function Initialize()
             return nil end}},{__index=_G})
           local script=assert(loadfile(root..'Widget.lua'));setfenv(script,env);script()
           env.Initialize();env.Update();env.Update()
+          if kind=='Settings' then env.LoadAll() end
           if entry:match('Search$') then
             -- Location search: searching, then results (or none, or a connection error).
             env.SearchLocation('Kochi');env.Update()

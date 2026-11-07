@@ -1776,7 +1776,9 @@ local function settings()
     slider('Scale','WIDGET SIZE',262,{.25,.5,.75,1,1.25,1.5})
     slider('TextScale','LABELS AND READINGS',320)
     slider('NumberScale','LARGE NUMBERS',378)
-    text('ADD TO DESKTOP',26,440,10,C.muted)
+    text('ADD TO DESKTOP',26,440,10,C.muted,200)
+    text('Load all widgets',W-26,438,11,C.accent,200,action('LoadAll()'),'Right')
+    texts[#texts].ToolTipText='Loads the full version of every widget that is not open yet'
     local widgetList={'Battery','Network','Vitals','Clock','Shortcuts','Audio','Cores','SysInfo','Diagnostics','Spectrum',
         'Calendar','Processes','DiskIO','Binary','GPU','Focus','Countdown','Weather','Progress','SunMoon','Analog','StatusBar',
         'BatteryCompact','BinaryCompact','VitalsCompact','NetworkCompact','ClockCompact','ProcessesMap',
@@ -1845,6 +1847,37 @@ function Configure(key,value)
     if not allowed[key] or not allowed[key][value] then return end
     SKIN:Bang('!WriteKeyValue','Variables',key,value,var('@')..'Settings.inc')
     SKIN:Bang('!RefreshGroup','NerdWidgets')
+end
+-- Every widget's full version, with its design height for first-time placement.
+local fullWidgets={{'Battery',250},{'Network',230},{'Vitals',270},{'Clock',220},{'Shortcuts',136},{'Audio',190},
+    {'Cores',260},{'SysInfo',260},{'Diagnostics',280},{'Spectrum',220},{'Calendar',300},{'Processes',330},
+    {'DiskIO',300},{'Binary',270},{'GPU',330},{'Focus',262},{'Countdown',250},{'Weather',330},
+    {'Progress',270},{'SunMoon',330},{'Analog',260},{'StatusBar',46}}
+-- Loads every widget that is not open, leaving open ones (Mini or full) as they are.
+-- Widgets Rainmeter has never placed are laid out in columns instead of stacking at 0,0.
+function LoadAll()
+    EndDrag()
+    local state={}
+    local file=io.open(var('SETTINGSPATH')..'Rainmeter.ini','rb')
+    if file then state=M.configState(file:read('*a'));file:close() end
+    local scale=M.size('Scale',num('Scale',1)) or 1
+    local cards,names={},{}
+    for _,wd in ipairs(fullWidgets) do
+        local name=wd[1]
+        local s=state[name] or {active=0,placed=false}
+        if s.active==0 then
+            SKIN:Bang('!ActivateConfig','NerdWidgets\\'..name,name..'.ini')
+            if not s.placed then
+                local width=num(name..'Width',name=='Battery' and 500 or name=='StatusBar' and 800 or 340)
+                cards[#cards+1]={w=width*scale,h=wd[2]*scale,wide=name=='StatusBar'};names[#cards]=name
+            end
+        end
+    end
+    local areaW=num('WORKAREAWIDTH',num('SCREENAREAWIDTH',1920))
+    local areaH=num('WORKAREAHEIGHT',num('SCREENAREAHEIGHT',1080))
+    for i,pos in ipairs(M.flowLayout(cards,areaW,areaH,16)) do
+        SKIN:Bang('!Move',tostring(math.floor(num('WORKAREAX',0)+pos.x)),tostring(math.floor(num('WORKAREAY',0)+pos.y)),'NerdWidgets\\'..names[i])
+    end
 end
 function Load(name)
     EndDrag()
