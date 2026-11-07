@@ -223,6 +223,26 @@ function M.moon(now)
     return {age=age, phase=p, illumination=(1 - math.cos(2 * math.pi * p)) / 2, name=name,
         nextFull=now + ((p < .5 and .5 or 1.5) - p) * day, nextNew=now + (1 - p) * day}
 end
+-- Query-string encoding: spaces as '+', everything but unreserved characters as %XX (UTF-8 bytes).
+function M.urlEncode(s)
+    return (tostring(s or ''):gsub('[^%w%-%._~ ]', function(c) return string.format('%%%02X', c:byte()) end):gsub(' ', '+'))
+end
+-- Up to four places from an Open-Meteo geocoding response; an empty list when nothing matched.
+function M.geoParse(json)
+    local list = tostring(json or ''):match('"results":%s*(%b[])')
+    local out = {}
+    if not list then return out end
+    for obj in list:gmatch('%b{}') do
+        local function s(k) return obj:match('"' .. k .. '":%s*"(.-)"') end
+        local function n(k) return tonumber(obj:match('"' .. k .. '":%s*([%-%d%.]+)')) end
+        local lat, lon = n('latitude'), n('longitude')
+        if lat and lon then
+            out[#out + 1] = {name=s('name') or '?', lat=lat, lon=lon, country=s('country'), admin1=s('admin1')}
+        end
+        if #out >= 4 then break end
+    end
+    return out
+end
 function M.coreCount(raw)
     local n = tonumber(raw) or 1
     return M.clamp(math.floor(n), 1, 32)

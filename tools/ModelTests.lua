@@ -66,6 +66,11 @@ function Initialize()
     local mf=M.moon(1712600460+M.synodic*43200)
     check(mf.illumination>.95 and mf.name=='Full moon','Full moon half a cycle later')
     check(M.moon(1712600460+M.synodic*86400*.25).name=='First quarter','First quarter')
+    local geoSample=[[{"results":[{"id":1859146,"name":"Kochi","latitude":33.55,"longitude":133.53333,"country":"Japan","admin1":"Kochi"},{"id":1273874,"name":"Kochi","latitude":9.93988,"longitude":76.26022,"postcodes":["682001","682002"],"country":"India","admin1":"Kerala"},{"id":3,"name":"A Very Long Place Name That Must Fit Somewhere","latitude":-33.9,"longitude":151.2,"country":"Australia","admin1":"New South Wales"},{"id":4,"name":"Four","latitude":1,"longitude":2},{"id":5,"name":"Five","latitude":1,"longitude":2}],"generationtime_ms":0.15}]]
+    local places=M.geoParse(geoSample)
+    check(#places==4 and places[2].lat==9.93988 and places[2].country=='India' and places[2].admin1=='Kerala' and places[4].country==nil,'Geocoding results')
+    check(#M.geoParse('{"generationtime_ms":0.07}')==0 and #M.geoParse('')==0,'No geocoding results')
+    check(M.urlEncode('New York, NY')=='New+York%2C+NY' and M.urlEncode('S\195\163o Paulo')=='S%C3%A3o+Paulo','URL encoding')
     local cases=0
     -- entry, kind, variant, height
     local entries={{'Battery','Battery','Battery',280},{'Compact','Battery','Compact',168},{'Network','Network','Network',230},
@@ -76,6 +81,7 @@ function Initialize()
       {'DiskIO','DiskIO','DiskIO',300},{'Binary','Binary','Binary',270},{'BinaryCompact','Binary','Compact',210},{'GPU','GPU','GPU',330},
       {'Focus','Focus','Focus',262},{'Countdown','Countdown','Countdown',250},{'Weather','Weather','Weather',330},
       {'Progress','Progress','Progress',270},{'SunMoon','SunMoon','SunMoon',330},{'SunMoonSouth','SunMoon','SunMoon',330},
+      {'WeatherSearch','Weather','Weather',330},{'SunMoonSearch','SunMoon','SunMoon',330},
       {'Analog','Analog','Analog',260},{'StatusBar','StatusBar','StatusBar',46},{'Settings','Settings','Settings',642}}
     for _,e in ipairs(entries) do
       local entry,kind,variant,height=e[1],e[2],e[3],e[4]
@@ -109,7 +115,8 @@ function Initialize()
             OSDisplay='24H2',OSBuild='26300',HostName='TEST-PC',IP='192.168.1.109',Gateway='192.168.1.1',
             Mask='255.255.255.0',DNS='1.1.1.1',MeasureAudioVol='Headphones',
             ProcCPU1='Rainmeter',ProcCPU2='msedge',ProcRAM1='AVeryLongProcessNameThatMustBeTrimmedToFit',ProcRAM2='java',WeatherData=sample,
-            GPUName='Intel(R) UHD Graphics',GPUProc1='dwm',GPUProc2='Rainmeter'}
+            GPUName='Intel(R) UHD Graphics',GPUProc1='dwm',GPUProc2='Rainmeter',
+            GeoSearch=flags==128 and '{"generationtime_ms":0.07}' or geoSample}
           local mock={}
           function mock:GetVariable(name,default) return vars[name] or default or '' end
           function mock:GetMeasure(name)
@@ -122,6 +129,12 @@ function Initialize()
           local env=setmetatable({SKIN=mock,io={open=function() return nil end}},{__index=_G})
           local script=assert(loadfile(root..'Widget.lua'));setfenv(script,env);script()
           env.Initialize();env.Update();env.Update()
+          if entry:match('Search$') then
+            -- Location search: searching, then results (or none, or a connection error).
+            env.SearchLocation('Kochi');env.Update()
+            if flags==255 then env.GeoFailed() else env.GeoDone() end
+            env.Update()
+          end
           if kind=='Focus' then
             -- Exercise the timer buttons: start, pause, resume, skip, reset.
             env.FocusToggle();env.Update();env.FocusToggle();env.FocusToggle();env.FocusSkip();env.Update();env.FocusReset();env.Update()

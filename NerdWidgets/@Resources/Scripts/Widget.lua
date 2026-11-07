@@ -651,8 +651,91 @@ local function weatherIcon(kind,cx,cy,s,day)
         line(cx+s*.06,cy+s*.3,cx-s*.04,cy+s*.46,C.secondary,math.max(1.4,s*.06))
     end
 end
+-- Location search (Weather, Sun & Moon): Open-Meteo geocoding, free and keyless.
+-- Only runs when the user submits a search; picking a place writes Settings.inc.
+local geo={state='idle',items={}}
+function EditLocation()
+    SKIN:Bang('!CommandMeasure','LocationInput','ExecuteBatch 1')
+end
+function SearchLocation(q)
+    q=(tostring(q or ''):gsub('^%s+',''):gsub('%s+$',''))
+    if q=='' then return end
+    geo={state='searching',query=q,items={}}
+    SKIN:Bang('!SetOption','GeoSearch','URL','https://geocoding-api.open-meteo.com/v1/search?count=4&language=en&format=json&name='..M.urlEncode(q))
+    SKIN:Bang('!EnableMeasure','GeoSearch')
+    SKIN:Bang('!UpdateMeasure','GeoSearch')
+    SKIN:Bang('!CommandMeasure','GeoSearch','Update')
+    focusRedraw()
+end
+function GeoDone()
+    if geo.state~='searching' then return end
+    geo.items=M.geoParse(measureString('GeoSearch',''))
+    geo.state=#geo.items>0 and 'results' or 'empty'
+    SKIN:Bang('!DisableMeasure','GeoSearch')
+    focusRedraw()
+end
+function GeoFailed()
+    if geo.state~='searching' then return end
+    geo.state='error'
+    SKIN:Bang('!DisableMeasure','GeoSearch')
+    focusRedraw()
+end
+function GeoCancel() geo={state='idle',items={}};focusRedraw() end
+local function writeSetting(key,value) SKIN:Bang('!WriteKeyValue','Variables',key,value,var('@')..'Settings.inc') end
+function PickLocation(i)
+    local place=geo.items[tonumber(i)]
+    if not place then return end
+    writeSetting('WeatherLatitude',string.format('%.4f',place.lat))
+    writeSetting('WeatherLongitude',string.format('%.4f',place.lon))
+    writeSetting('WeatherCity',place.name)
+    -- Choosing a place on the Weather card is consent for its forecast requests.
+    if kind=='Weather' then writeSetting('WeatherEnabled','1') end
+    geo={state='idle',items={}}
+    SKIN:Bang('!RefreshGroup','NerdWidgets')
+end
+function EnableWeather()
+    writeSetting('WeatherEnabled','1')
+    SKIN:Bang('!RefreshGroup','NerdWidgets')
+end
+-- Draws the search state in place of the card; false when no search is under way.
+local function locationPanel(title)
+    set('LocationInput','SolidColor',C.chip..',255')
+    set('LocationInput','FontColor',C.text)
+    if geo.state=='idle' then return false end
+    header(title,'LOCATION')
+    local y=48
+    text('SEARCH',24,y,10,C.muted,W-48)
+    y=y+labelHeight(10)
+    text(geo.query or '',24,y,15,C.text,W-48,action('EditLocation()'))
+    y=y+labelHeight(15)+8
+    local message=({searching='Searching…',error='Could not reach Open-Meteo. Try again.',empty='No places found. Try another spelling.'})[geo.state]
+    if message then
+        text(message,24,y,12,geo.state=='error' and C.secondary or C.muted,W-48)
+        y=y+labelHeight(12)+12
+    else
+        text('CHOOSE A PLACE',24,y,10,C.muted,W-48)
+        y=y+labelHeight(10)+4
+        local rowH=12+labelHeight(13)+labelHeight(10)
+        for i,place in ipairs(geo.items) do
+            local pick=action('PickLocation('..i..')')
+            local where={}
+            if place.admin1 and place.admin1~=place.name then where[#where+1]=place.admin1 end
+            if place.country then where[#where+1]=place.country end
+            rect(24,y,W-48,rowH,13,C.chip)
+            text(place.name,36,y+6,13,C.text,W-72,pick)
+            text(string.format('%s%.2f°, %.2f°',#where>0 and table.concat(where,', ')..' · ' or '',place.lat,place.lon),36,y+6+labelHeight(13),10,C.muted,W-72,pick)
+            y=y+rowH+6
+        end
+        y=y+6
+    end
+    text('New search',24,y,11,C.accent,W/2-24,action('EditLocation()'))
+    text('Cancel',W-24,y,11,C.muted,100,action('GeoCancel()'),'Right')
+    H=y+labelHeight(11)+12
+    return true
+end
 local weatherJson,weatherUpdated
 local function weatherCard(now)
+    if locationPanel('WEATHER') then return end
     local city=var('WeatherCity','')
     header('WEATHER',city~='' and string.upper(city) or nil)
     local enabled=num('WeatherEnabled',0)==1
@@ -660,15 +743,29 @@ local function weatherCard(now)
     if raw~='' and raw~=weatherJson then weatherJson=raw;weatherUpdated=now end
     local w=M.weatherParse(weatherJson)
     local footer=function(y)
-        text(weatherUpdated and ('OPEN-METEO · '..os.date('%H:%M',weatherUpdated)) or 'OPEN-METEO',24,y,10,C.muted,W-144)
-        if enabled then text('Refresh ↻',W-24,y,11,C.accent,100,'[!CommandMeasure WeatherData "Update"]','Right') end
-        H=y+labelHeight(10)+12
+        text('Change location',24,y,11,C.accent,W-150,action('EditLocation()'))
+        if enabled then
+            text((weatherUpdated and os.date('%H:%M ',weatherUpdated) or '')..'↻',W-24,y,11,C.muted,110,'[!CommandMeasure WeatherData "Update"]','Right')
+        end
+        H=y+labelHeight(11)+12
     end
     if not w then
-        text(enabled and 'Waiting for weather data…' or 'Location not set',24,56,15,C.text,W-48)
-        text(enabled and 'Updates every 15 minutes.' or 'Set WeatherLatitude, WeatherLongitude and',24,56+labelHeight(15)+4,11,C.muted,W-48)
-        if not enabled then text('WeatherEnabled=1 in Settings.inc.',24,56+labelHeight(15)+labelHeight(11)+4,11,C.muted,W-48) end
-        footer(56+labelHeight(15)+2*labelHeight(11)+16)
+        local lat,lon=tonumber(var('WeatherLatitude','')),tonumber(var('WeatherLongitude',''))
+        local located=lat and lon and not (lat==0 and lon==0)
+        local y=56
+        if enabled then
+            text('Waiting for weather data…',24,y,15,C.text,W-48)
+            text('Updates every 15 minutes.',24,y+labelHeight(15)+4,11,C.muted,W-48)
+        elseif located then
+            text('Weather is off',24,y,15,C.text,W-48)
+            text('Turn on for '..(city~='' and city or string.format('%.2f°, %.2f°',lat,lon)),24,y+labelHeight(15)+4,12,C.accent,W-48,action('EnableWeather()'))
+            text('Sends this location to Open-Meteo every 15 min.',24,y+labelHeight(15)+labelHeight(12)+6,10,C.muted,W-48)
+        else
+            text('Location not set',24,y,15,C.text,W-48)
+            text('Search for your city',24,y+labelHeight(15)+4,12,C.accent,W-48,action('EditLocation()'))
+            text('Forecasts from Open-Meteo · free, no account.',24,y+labelHeight(15)+labelHeight(12)+6,10,C.muted,W-48)
+        end
+        footer(y+labelHeight(15)+labelHeight(12)+labelHeight(11)+18)
         return
     end
     local unit=var('WeatherTempUnit','celsius')=='fahrenheit' and 'F' or 'C'
@@ -843,6 +940,7 @@ local function progressCard(now)
 end
 -- Sun times are computed locally from the Weather card's coordinates; the moon needs no location.
 local function sunMoon(now)
+    if locationPanel('SUN & MOON') then return end
     local lat,lon=tonumber(var('WeatherLatitude','')),tonumber(var('WeatherLongitude',''))
     local located=lat and lon and not (lat==0 and lon==0) and math.abs(lat)<=90 and math.abs(lon)<=180
     local city=var('WeatherCity','')
@@ -893,10 +991,10 @@ local function sunMoon(now)
     else
         text('Location not set',24,y,15,C.text,W-48)
         y=y+labelHeight(15)+2
-        text('Set WeatherLatitude and WeatherLongitude',24,y,11,C.muted,W-48)
-        y=y+labelHeight(11)
-        text('in Settings.inc for sunrise and sunset.',24,y,11,C.muted,W-48)
-        y=y+labelHeight(11)+14
+        text('Search for your city',24,y,12,C.accent,W-48,action('EditLocation()'))
+        y=y+labelHeight(12)
+        text('Sunrise and sunset are worked out on this PC.',24,y,10,C.muted,W-48)
+        y=y+labelHeight(10)+14
     end
     local m=M.moon(now)
     local r=26
@@ -918,8 +1016,9 @@ local function sunMoon(now)
     text(string.format('%.0f%% LIT · DAY %.1f',m.illumination*100,m.age),tx,y+labelHeight(13),10,C.muted,tw)
     text(string.upper('Full '..os.date('%d %b',m.nextFull)..' · New '..os.date('%d %b',m.nextNew)),tx,y+labelHeight(13)+labelHeight(10),10,C.muted,tw)
     y=y+math.max(2*r,labelHeight(13)+2*labelHeight(10))+12
-    text(located and string.format('%.2f°, %.2f°',lat,lon) or 'MEAN SYNODIC MONTH',24,y,10,C.muted,W-48)
-    H=y+labelHeight(10)+12
+    text(located and string.format('%.2f°, %.2f°',lat,lon) or 'MEAN SYNODIC MONTH',24,y,10,C.muted,W-160)
+    if located then text('Change location',W-24,y,11,C.accent,130,action('EditLocation()'),'Right') end
+    H=y+labelHeight(11)+12
 end
 local function analog(now)
     local t=os.date('*t',now)

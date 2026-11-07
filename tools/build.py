@@ -143,6 +143,19 @@ Group=NerdWidgetsDrawing
             '&timezone=auto&forecast_days=4&temperature_unit=#WeatherTempUnit#&wind_speed_unit=#WeatherWindUnit#',
         RegExp='(?siU)^(.*)$',StringIndex=1,UpdateRate=900,Codepage=65001,
         Disabled='(1-#WeatherEnabled#)')
+    # Location search for Weather and Sun & Moon: a text box, then an Open-Meteo geocoding
+    # request that stays disabled until the user submits a search (Widget.lua sets its URL).
+    location = measure('LocationInput','Plugin',Plugin='InputText',
+        X='(24*#Scale#)',Y='(44*#Scale#)',W='((#Width#-48)*#Scale#)',H='(30*#Scale#)',
+        FontFace='#Font#',FontSize='(11*#Scale#)',SolidColor='40,40,40,255',FontColor='255,255,255',
+        FocusDismiss=1,DynamicVariables=1,
+        Command1='''[!CommandMeasure MeasureRenderer "SearchLocation([[$UserInput$]])"] DefaultValue="#WeatherCity#"''')
+    location += measure('GeoSearch','WebParser',URL='https://geocoding-api.open-meteo.com/v1/search?name=',
+        RegExp='(?siU)^(.*)$',StringIndex=1,UpdateRate=86400,Codepage=65001,Disabled=1,DynamicVariables=1,
+        FinishAction='[!CommandMeasure MeasureRenderer "GeoDone()"]',
+        OnConnectErrorAction='[!CommandMeasure MeasureRenderer "GeoFailed()"]',
+        OnRegExpErrorAction='[!CommandMeasure MeasureRenderer "GeoDone()"]')
+    weather += location
     # Countdown edits its title and date in place with the bundled InputText plugin.
     countdown = measure('CountdownInput','Plugin',Plugin='InputText',
         X='(24*#Scale#)',Y='(44*#Scale#)',W='((#Width#-48)*#Scale#)',H='(30*#Scale#)',
@@ -173,7 +186,7 @@ Group=NerdWidgetsDrawing
                 ('Calendar','Calendar',340,300,''),('Processes','Processes',340,330,processes),
                 ('DiskIO','DiskIO',340,300,diskio),('Binary','Binary',340,270,''),('Binary','Compact',340,210,''),('GPU','GPU',340,330,gpu),('Focus','Focus',340,262,''),
                 ('Countdown','Countdown',340,250,countdown),('Weather','Weather',340,330,weather),
-                ('Progress','Progress',340,270,''),('SunMoon','SunMoon',340,330,''),
+                ('Progress','Progress',340,270,''),('SunMoon','SunMoon',340,330,location),
                 ('Analog','Analog',340,260,''),('StatusBar','StatusBar',800,46,statusbar),
                 ('Settings','Settings',500,642,'')]
     # Rainmeter.ini records the loaded skin by its index in the folder's sorted file list,
