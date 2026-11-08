@@ -506,13 +506,33 @@ local function ratePair(title,labelA,labelB,a,b,listA,listB,now,footer)
     text('AUTO SCALE',W-24,footerY,10,C.muted,110,nil,'Right')
     return footerY+labelHeight(10)
 end
+-- Today's traffic, counted while the Network card runs and kept in Data\network-today.tsv
+-- (saved every minute and on close, so a refresh or restart keeps the day's total).
+local traffic,trafficLast,trafficSaved={},nil,0
+local function trafficPath() return var('@')..'Data\\network-today.tsv' end
+function SaveTraffic()
+    if not traffic.date then return end
+    local path=trafficPath()
+    local file=io.open(path..'.tmp','w')
+    if not file then return end
+    file:write(M.formatTraffic(traffic));file:close()
+    os.remove(path);os.rename(path..'.tmp',path)
+end
+local function countTraffic(now,a,b)
+    local date=os.date('%Y-%m-%d',now)
+    local newDay=traffic.date~=nil and traffic.date~=date
+    M.addTraffic(traffic,date,a,b,trafficLast and now-trafficLast)
+    trafficLast=now
+    if newDay or now-trafficSaved>=60 then trafficSaved=now;SaveTraffic() end
+end
 -- Compact strip: both rates on one row over a short shared graph.
 local function networkCompact(now)
     local a,b=measure('Download'),measure('Upload')
     series(down,a,now);series(up,b,now)
+    countTraffic(now,a,b)
     local nf=var('NumberFont','JetBrains Mono')
     local half=(W-56)/2
-    header('NETWORK')
+    header('NETWORK','TODAY '..M.bytes(traffic.down+traffic.up))
     local y=46
     for i,v in ipairs({{'↓',a,C.accent,24},{'↑',b,C.secondary,W/2+4}}) do
         local value,unit=M.rate(v[2])
@@ -532,8 +552,20 @@ local function networkCompact(now)
 end
 local function network(now)
     if variant=='Compact' then networkCompact(now) return end
-    local y=ratePair('NETWORK PULSE','↓ DOWNLOAD','↑ UPLOAD',measure('Download'),measure('Upload'),down,up,now,'LAST 60 SECONDS')
-    H=(y+12)
+    local a,b=measure('Download'),measure('Upload')
+    countTraffic(now,a,b)
+    local y=ratePair('NETWORK PULSE','↓ DOWNLOAD','↑ UPLOAD',a,b,down,up,now,'LAST 60 SECONDS')
+    -- Today: the total on the left, then download and upload, on one soft row.
+    local rowY=y+8
+    local rowH=labelHeight(13)+10
+    rect(24,rowY,W-48,rowH,12,C.chip)
+    local function middle(size) return rowY+(rowH-labelHeight(size))/2 end
+    local inner=W-72
+    text('TODAY',36,middle(10),10,C.muted,52)
+    text(M.bytes(traffic.down+traffic.up),90,middle(13),13,C.text,inner*.5-56)
+    text('↓ '..M.bytes(traffic.down),36+inner*.5,middle(11),11,C.accent,inner*.25)
+    text('↑ '..M.bytes(traffic.up),W-36,middle(11),11,C.secondary,inner*.25,nil,'Right')
+    H=rowY+rowH+14
 end
 local function diskio(now)
     local drivesOnly=variant=='DiskIODrives'
@@ -2084,7 +2116,7 @@ function Configure(key,value)
     SKIN:Bang('!RefreshGroup','NerdWidgets')
 end
 -- Every widget's full version, with its design height for first-time placement.
-local fullWidgets={{'Battery',250},{'Network',230},{'Vitals',270},{'Clock',220},{'Shortcuts',136},{'Audio',190},
+local fullWidgets={{'Battery',250},{'Network',272},{'Vitals',270},{'Clock',220},{'Shortcuts',136},{'Audio',190},
     {'Cores',260},{'SysInfo',260},{'Diagnostics',280},{'Spectrum',220},{'Calendar',300},{'Processes',330},
     {'DiskIO',300},{'Binary',270},{'GPU',330},{'Focus',262},{'Countdown',250},{'Weather',330},
     {'Progress',270},{'SunMoon',330},{'Analog',260},{'StatusBar',46},{'NowPlaying',260}}
@@ -2156,6 +2188,15 @@ function Initialize()
     end
     C.track=C.track or C.border
     C.grid=C.border..(look=='Instrument' and ',170' or ',90')
+    if kind=='Network' then
+        -- Today's count carries on from the saved file; another day's total starts over.
+        local file=io.open(trafficPath(),'r')
+        if file then
+            local saved=M.parseTraffic(file:read('*a'));file:close()
+            if saved.date==os.date('%Y-%m-%d') then traffic=saved end
+        end
+        trafficSaved=os.time()
+    end
     historyFile=var('@')..'Data\\battery.tsv'
     if kind=='Battery' then
         local file=io.open(historyFile,'r')

@@ -200,7 +200,7 @@ Hidden=1
                 'StatusBar': 'StatusBarWidth=800\nPingHost=1.1.1.1\nNetworkInterface=Best\n',
                 'NowPlaying': 'NowPlayingWidth=340\n'}
     variants = [('Battery','Battery',340,280,battery),('Battery','Compact',340,168,battery),
-                ('Network','Network',340,230,network),('Network','NetworkCompact',340,150,network),
+                ('Network','Network',340,272,network),('Network','NetworkCompact',340,150,network),
                 ('Vitals','Vitals',340,270,vitals),('Vitals','VitalsCompact',340,140,vitals),
                 ('Clock','Clock',340,220,''),('Clock','ClockCompact',340,120,''),('Shortcuts','Shortcuts',500,136,''),
                 ('Audio','Audio',340,190,audio),('Spectrum','Spectrum',340,220,spectrum),
@@ -230,6 +230,9 @@ OnCloseAction=[!CommandMeasure MeasureRenderer "EndDrag()"]
 MouseScrollUpAction=[!CommandMeasure MeasureAudioVol "ChangeVolume 2"]
 MouseScrollDownAction=[!CommandMeasure MeasureAudioVol "ChangeVolume -2"]
 '''
+        if kind == 'Network':
+            # Keep today's traffic total when the card closes or refreshes.
+            events = 'OnCloseAction=[!CommandMeasure MeasureRenderer "SaveTraffic()"]\n'
         slider_include='@IncludeSliders=#@#Sliders.inc' if kind=='Settings' else nowplaying_meters if kind=='NowPlaying' else ''
         update_override = 'Update=40\n' if kind == 'Spectrum' else 'Update=500\n' if kind == 'NowPlaying' else ''
         extra_vars = 'CoreCount=%NUMBER_OF_PROCESSORS%\n' if kind == 'Cores' else ''

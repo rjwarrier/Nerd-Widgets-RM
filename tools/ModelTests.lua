@@ -45,6 +45,21 @@ function Initialize()
     check(M.isoWeek({year=2024,yday=366,wday=3})==1,'31 Dec 2024 belongs to 2025-W01')
     check(M.bcd(9,8) and M.bcd(9,1) and not M.bcd(9,4),'BCD bits')
     check(M.bytes(1610612736)=='1.5 GB' and M.bytes(524288000)=='500 MB','Byte formatting')
+    do
+        -- Today's traffic: rate x seconds, gaps count one second, a new date starts over.
+        local day={}
+        M.addTraffic(day,'2026-11-08',1000,200,nil)
+        check(day.down==0 and day.up==0,'Traffic: first sample adds nothing')
+        M.addTraffic(day,'2026-11-08',1000,200,1);M.addTraffic(day,'2026-11-08',1000,200,2)
+        check(day.down==3000 and day.up==600,'Traffic: rate times seconds')
+        M.addTraffic(day,'2026-11-08',1000,-5,3600)
+        check(day.down==4000 and day.up==600,'Traffic: gaps count one second; negative rates ignored')
+        local saved=M.parseTraffic(M.formatTraffic(day))
+        check(saved.date=='2026-11-08' and saved.down==4000 and saved.up==600,'Traffic: save round trip')
+        M.addTraffic(saved,'2026-11-09',500,500,1)
+        check(saved.down==500 and saved.up==500,'Traffic: new day starts over')
+        check(M.parseTraffic('garbage').date==nil and M.parseTraffic(nil).date==nil,'Traffic: bad file ignored')
+    end
     check(M.mmss(1500)=='25:00' and M.mmss(59.6)=='01:00' and M.mmss(-5)=='00:00','Timer format')
     local fm,fs=M.focusNext('work',3);check(fm=='long' and fs==4,'4th session earns the long break')
     fm,fs=M.focusNext('work',0);check(fm=='break' and fs==1,'Short break after work')
@@ -123,7 +138,7 @@ function Initialize()
     check(M.chargeRates(hist)[#M.chargeRates(hist)].t<31*60+600,'A gap restarts the rate window')
     local cases=0
     -- entry, kind, variant, height
-    local entries={{'Battery','Battery','Battery',280},{'Compact','Battery','Compact',168},{'Network','Network','Network',230},
+    local entries={{'Battery','Battery','Battery',280},{'Compact','Battery','Compact',168},{'Network','Network','Network',272},
       {'NetworkCompact','Network','Compact',150},{'Vitals','Vitals','Vitals',270},{'VitalsCompact','Vitals','Compact',140},
       {'Clock','Clock','Clock',220},{'ClockCompact','Clock','Compact',120},{'Shortcuts','Shortcuts','Shortcuts',136},
       {'Audio','Audio','Audio',190},{'Spectrum','Spectrum','Spectrum',220},{'SpectrumLine','Spectrum','SpectrumLine',220},{'SpectrumLED','Spectrum','SpectrumLED',220},{'NowPlaying','NowPlaying','NowPlaying',260},{'Cores','Cores','Cores',260},{'SysInfo','SysInfo','SysInfo',260},
@@ -196,6 +211,11 @@ function Initialize()
           end
           local env=setmetatable({SKIN=mock,io={open=function(path,mode)
             if kind=='Battery' and flags~=255 and mode~='w' and tostring(path):match('battery%.tsv$') then return fakeHistory() end
+            if kind=='Network' and flags~=255 and mode~='w' and tostring(path):match('network%-today%.tsv$') then
+              -- Today's saved traffic: 1.5 GB down, 500 MB up (flags 8: a day that has passed).
+              local date=flags==8 and '2020-01-01' or os.date('%Y-%m-%d')
+              return {read=function() return date..'\t1610612736\t524288000\n' end,close=function() end}
+            end
             if kind=='NowPlaying' and flags~=255 and mode~='w' and tostring(path):match('nowplaying%.txt$') then
               -- Playing with cover art; paused with very long Unicode names; playing in a browser with no timeline.
               local beat=os.time()
@@ -225,6 +245,17 @@ function Initialize()
           if kind=='Focus' then
             -- Exercise the timer buttons: start, pause, resume, skip, reset.
             env.FocusToggle();env.Update();env.FocusToggle();env.FocusToggle();env.FocusSkip();env.Update();env.FocusReset();env.Update()
+          end
+          if kind=='Network' then
+            -- Today's total shows on both cards: carried over from the file, or started over.
+            -- A fresh day holds at most a second of the mock 64 KiB/s.
+            local fresh=flags==8 or flags==255
+            local want=fresh and (variant=='Compact' and '^TODAY %d+ KB$' or '^%d+ KB$') or '2%.0 GB'
+            local found=false
+            for name,o in pairs(options) do
+              if name:match('^Text') and o.Hidden=='0' and o.Text:find(want) then found=true end
+            end
+            check(found,'Network shows today\'s total: '..entry..' flags '..flags)
           end
           if kind=='Spectrum' and flags==255 then
             -- Two seconds of silence slow the drawing meters; the first sound restores them at once.

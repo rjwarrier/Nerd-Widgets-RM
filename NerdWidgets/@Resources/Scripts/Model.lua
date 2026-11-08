@@ -441,5 +441,25 @@ function M.utf8Trim(value, maxChars)
     if chars <= maxChars then return value end
     return value:sub(1, cut - 1) .. '…'
 end
+-- Today's network traffic: rates (bytes/s) times the seconds since the last sample, restarting
+-- when the date changes. A gap over 5 s (sleep, a closed skin) counts as one second, since the
+-- rate says nothing about the time Rainmeter did not see.
+function M.addTraffic(day, date, down, up, seconds)
+    if day.date ~= date then day.date = date; day.down = 0; day.up = 0 end
+    local dt = tonumber(seconds) or 0
+    if dt > 5 then dt = 1 elseif dt < 0 then dt = 0 end
+    day.down = day.down + math.max(0, tonumber(down) or 0) * dt
+    day.up = day.up + math.max(0, tonumber(up) or 0) * dt
+    return day
+end
+-- The saved day: "YYYY-MM-DD<tab>down<tab>up".
+function M.parseTraffic(text)
+    local date, down, up = tostring(text or ''):match('^(%d%d%d%d%-%d%d%-%d%d)\t([%d%.]+)\t([%d%.]+)')
+    if not date then return {} end
+    return {date = date, down = tonumber(down), up = tonumber(up)}
+end
+function M.formatTraffic(day)
+    return string.format('%s\t%.0f\t%.0f\n', day.date or '', day.down or 0, day.up or 0)
+end
 
 return M
