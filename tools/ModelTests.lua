@@ -15,6 +15,17 @@ function Initialize()
     check(not M.battery(1,50,0,4294967295).life,'Unknown DWORD lifetime')
     check(not M.battery(1,50,1,7200).life,'Do not reuse discharge estimate on AC')
     check(M.duration(9000)=='2h 30m','Duration formatting')
+    local np=M.parseMedia('app=Spotify.exe\r\ntitle=A=B\r\nstatus=Playing\r\nduration=200\r\nposition=50\r\nupdated=1000\r\nheartbeat=1003\r\n')
+    check(np.title=='A=B' and np.playing and np.active and np.duration==200,'Media state parses')
+    check(M.mediaPosition(np,1010)==60 and M.mediaPosition(np,9999)==200,'A playing track runs on, up to its end')
+    np.playing=false
+    check(M.mediaPosition(np,1010)==50 and M.mediaPosition({position=5},0)==nil,'Paused or no timeline')
+    check(not M.parseMedia('status=Closed\ntitle=x').active and not M.parseMedia('').active,'Nothing playing')
+    check(M.trackTime(65)=='1:05' and M.trackTime(3725)=='1:02:05' and M.trackTime(-3)=='0:00','Track times')
+    check(M.mediaSource('Spotify.exe')=='Spotify' and M.mediaSource('308046B0AF4A39CB')=='Firefox'
+      and M.mediaSource('Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic')=='Media Player'
+      and M.mediaSource('C:\\Apps\\Winamp.exe')=='Winamp','Player names')
+    check(M.utf8Trim('abcdef',4)=='abc…' and M.utf8Trim('abc',4)=='abc' and M.utf8Trim('ééééé',3)=='éé…','UTF-8 trim')
     local v,u=M.rate(1048576);check(v=='1.0' and u=='MiB/s','Binary network conversion')
     local h={};check(M.append(h,1000,0,60),'History accepts measured zero')
     check(not M.append(h,1001,20,60),'History sample cadence')
@@ -115,7 +126,7 @@ function Initialize()
     local entries={{'Battery','Battery','Battery',280},{'Compact','Battery','Compact',168},{'Network','Network','Network',230},
       {'NetworkCompact','Network','Compact',150},{'Vitals','Vitals','Vitals',270},{'VitalsCompact','Vitals','Compact',140},
       {'Clock','Clock','Clock',220},{'ClockCompact','Clock','Compact',120},{'Shortcuts','Shortcuts','Shortcuts',136},
-      {'Audio','Audio','Audio',190},{'Spectrum','Spectrum','Spectrum',220},{'Cores','Cores','Cores',260},{'SysInfo','SysInfo','SysInfo',260},
+      {'Audio','Audio','Audio',190},{'Spectrum','Spectrum','Spectrum',220},{'SpectrumLine','Spectrum','SpectrumLine',220},{'SpectrumLED','Spectrum','SpectrumLED',220},{'NowPlaying','NowPlaying','NowPlaying',260},{'Cores','Cores','Cores',260},{'SysInfo','SysInfo','SysInfo',260},
       {'Diagnostics','Diagnostics','Diagnostics',280},{'Calendar','Calendar','Calendar',300},{'CalendarWeek','Calendar','CalendarWeek',160},{'WeatherCompact','Weather','Compact',130},
       {'GPUCompact','GPU','Compact',120},{'CoresRings','Cores','CoresRings',260},{'FocusCompact','Focus','Compact',140},
       {'CountdownCompact','Countdown','Compact',130},{'DiskIODrives','DiskIO','DiskIODrives',200},{'DiagnosticsCompact','Diagnostics','Compact',140},{'Processes','Processes','Processes',330},{'ProcessesMap','Processes','ProcessesMap',330},
@@ -147,7 +158,8 @@ function Initialize()
             CPU=42,CPU0=42,RAM=8*1073741824,RAMTotal=16*1073741824,DiskTotal=512*1073741824,DiskFree=200*1073741824,
             Download=65536,Upload=1024,Uptime=10000,Ping=14,Internet=1,MeasureAudioVol=26,
             SwapUsed=8*1073741824,SwapTotal=16*1073741824,PeakL=.4,PeakR=.4}
-          for b=0,15 do readings['Band'..b]=.5 end
+          for b=0,15 do readings['Band'..b]=flags==8 and 1 or flags==255 and 0 or (b%5)/4 end
+          if flags==128 then readings.MeasureAudioVol=-1 end
           for i=1,5 do readings['ProcCPU'..i]=40/i;readings['ProcRAM'..i]=2^31/i end
           readings.GPULoad=37;readings.GPUShared=245669888;readings.GPUProc1=2.9;readings.GPUProc2=1.3
           readings.DiskRead=2^21;readings.DiskWrite=4096
@@ -184,6 +196,19 @@ function Initialize()
           end
           local env=setmetatable({SKIN=mock,io={open=function(path,mode)
             if kind=='Battery' and flags~=255 and mode~='w' and tostring(path):match('battery%.tsv$') then return fakeHistory() end
+            if kind=='NowPlaying' and flags~=255 and mode~='w' and tostring(path):match('nowplaying%.txt$') then
+              -- Playing with cover art; paused with very long Unicode names; playing in a browser with no timeline.
+              local beat=os.time()
+              local media=table.concat(({
+                [1]={'app=Spotify.exe','title=Neelakannukal','artist=P Jayachandran','album=Classics','status=Playing',
+                  'canNext=1','canPrev=1','cover=cover-1.png','duration=300','position=120','updated='..(beat-5)},
+                [8]={'app=Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic','title='..string.rep('നീലക്കണ്ണുകൾ Long Title ',6),
+                  'artist='..string.rep('Very Long Artist Name ',5),'album='..string.rep('Album ',12),'status=Paused',
+                  'canNext=0','canPrev=0','cover=','duration=4000','position=3700','updated='..(beat-100)},
+                [128]={'app=MSEdge','title=Live stream','artist=','status=Playing','canNext=1','canPrev=1','cover='}})[flags],'\r\n')
+              media=media..'\r\nheartbeat='..beat
+              return {read=function() return media end,close=function() end}
+            end
             return nil end}},{__index=_G})
           local script=assert(loadfile(root..'Widget.lua'));setfenv(script,env);script()
           env.Initialize();env.Update();env.Update()
@@ -193,6 +218,9 @@ function Initialize()
             env.SearchLocation('Kochi');env.Update()
             if flags==255 then env.GeoFailed() else env.GeoDone() end
             env.Update()
+          end
+          if kind=='NowPlaying' then
+            env.MediaCommand('toggle');env.Update();env.MediaCommand('next');env.SetAudioVolume(50);env.Update()
           end
           if kind=='Focus' then
             -- Exercise the timer buttons: start, pause, resume, skip, reset.

@@ -2,6 +2,7 @@
 local M, kind, variant, W, H, S, C, shapes, texts, cache, history, down, up, cpu, pingList, reads, writes
 local lastShape, lastText, historyFile, sampleTime, sessionStart, sessionLevel, sessionAC
 local T,N,baseH,hits,lastHit,drag,look,gpuList
+local spectrumPeaks,media={},nil
 -- Forward-declared so cards defined earlier in the file can use it.
 local button
 local palettes = {
@@ -274,6 +275,14 @@ function ToggleBatteryScale()
     SKIN:Bang('!Redraw')
 end
 local rangeLabels={[30]='30M',[60]='1H',[180]='3H',[360]='6H',[720]='12H',[1080]='18H',[1440]='24H'}
+-- A mains plug, prongs up, centred on cx,cy and size tall.
+local function plug(cx,cy,size,color)
+    local u=size/14
+    line(cx-2.5*u,cy-7*u,cx-2.5*u,cy-3*u,color,1.8*u)
+    line(cx+2.5*u,cy-7*u,cx+2.5*u,cy-3*u,color,1.8*u)
+    rect(cx-5*u,cy-3.5*u,10*u,6*u,2*u,color)
+    line(cx,cy+2.5*u,cx,cy+7*u,color,1.8*u)
+end
 local function battery(now)
     local b=M.battery(measure('BatteryFlags'),measure('BatteryPercent'),measure('BatteryAC'),measure('BatteryLife'))
     -- A full day is always kept, so any range can be shown at once.
@@ -324,17 +333,33 @@ local function battery(now)
     local cw=narrow and W-24-chipX or (W-chipX-32)/2
     local source=b.charging and 'Charging' or b.ac==1 and 'AC power' or b.ac==0 and 'Battery' or 'Unknown'
     local below
+    -- Windows gives no estimate on AC, so the time-left chip only appears when there is one.
+    local life=b.life and M.duration(b.life)
     if narrow then
-        -- One chip; the power source is a plain line under it.
-        chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX,50,cw)
-        local lineY=50+chipHeight()+6
-        circle(chipX+5,lineY+labelHeight(10)/2,3,b.ac==1 and C.accent or C.muted)
-        text(unplugged and 'On battery '..unplugged or source,chipX+14,lineY,10,C.muted,cw-14)
-        below=lineY+labelHeight(10)
+        -- One chip at most; the power source is a plain line under it, or beside the reading alone.
+        local lineY=top+effective*1.4/2-labelHeight(11)/2
+        if life then
+            chip('EST. LEFT',life,chipX,50,cw)
+            lineY=50+chipHeight()+6
+        end
+        if b.ac==1 then
+            -- On AC the header already names the state; a plug icon says the rest.
+            local size=life and 16 or 24
+            local cy=life and lineY+labelHeight(11)/2 or top+effective*1.4/2
+            plug(chipX+size/2,cy,size,C.accent)
+            text(' ',chipX,cy-size/2,10,C.muted,size+4)
+            texts[#texts].H=f(size);texts[#texts].SolidColor='0,0,0,1'
+            texts[#texts].ToolTipText=source
+            below=math.max(lineY+labelHeight(11),cy+size/2)
+        else
+            circle(chipX+5,lineY+labelHeight(11)/2,3,C.muted)
+            text(unplugged and 'On battery '..unplugged or source,chipX+14,lineY,11,C.muted,cw-14)
+            below=lineY+labelHeight(11)
+        end
     else
         if unplugged then chip('ON BATTERY',unplugged,chipX,50,cw)
         else chip('POWER',source,chipX,50,cw) end
-        chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX+cw+8,50,cw)
+        if life then chip('EST. LEFT',life,chipX+cw+8,50,cw) end
         below=50+chipHeight()
     end
     local gx,gy,gw,gh=24,math.max(top+effective*1.4,below)+10,W-48,74
@@ -412,16 +437,21 @@ local function battery(now)
         text(rangeLabels[r],x+colW/2,rangeY+2,10,r==range and C.accent or C.muted,colW-6,action('SetBatteryRange('..r..')'),'Center')
     end
     local footerY=rangeY+pillH+8
+    -- Legend, right-aligned: a colored swatch before each muted label, evenly spaced.
+    local midY=footerY+labelHeight(10)/2
+    local x=W-24
+    for i=3,1,-1 do
+        local label=({'LEVEL','%/H','CHARGING'})[i]
+        local lw=#label*.6*10*T+2
+        text(label,x,footerY,10,C.muted,lw+2,nil,'Right')
+        x=x-lw-14
+        if i==3 then rect(x,midY-4,9,9,2,C.accent..',90')
+        else line(x,midY,x+10,midY,i==1 and C.accent or C.secondary,i==1 and 2.2 or 1.6) end
+        x=x-12
+    end
+    -- Session change since the power source last changed, in what is left on the left.
     local delta=b.valid and sessionLevel and string.format('%+.0f%%',b.percent-sessionLevel) or '--'
-    -- Legend, right-aligned: level, rate, charging band; the session delta takes what is left.
-    local cwid=8*.6*10*T+2
-    local legendW=cwid+22+34*T+8+40*T
-    text(delta..' · '..(sessionStart and M.duration(now-sessionStart)..(narrow and '' or ' observed') or (narrow and '--' or 'No readings')),
-        24,footerY,10,C.muted,math.max(40,W-48-legendW-8))
-    text('CHARGING',W-24,footerY,10,C.muted,cwid+4,nil,'Right')
-    rect(W-24-cwid-14,footerY+labelHeight(10)/2-4,9,9,2,C.accent..',90')
-    text('%/H',W-24-cwid-22,footerY,10,C.secondary,34*T,nil,'Right')
-    text('LEVEL',W-24-cwid-22-34*T-8,footerY,10,C.accent,40*T,nil,'Right')
+    text(sessionStart and delta..' in '..M.duration(now-sessionStart) or 'No readings yet',24,footerY,10,C.muted,math.max(40,x-24))
     H=footerY+labelHeight(10)+12
 end
 local function series(values,value,now)
@@ -1527,12 +1557,64 @@ local function spectrum()
     local graphY = 56
     local footerY = graphY + graphH + 26
     H = (footerY + labelHeight(10) + 12)
-    header('AUDIO SPECTRUM', '16-BAND FFT')
+    header('AUDIO SPECTRUM', variant == 'SpectrumLine' and 'FFT CURVE' or variant == 'SpectrumLED' and 'LED METER' or '16-BAND FFT')
     local peakL = M.clamp(measure('PeakL'), 0, 1)
     local peakR = M.clamp(measure('PeakR'), 0, 1)
     local led = look == 'Instrument'
     if led then graphPanel(24, graphY, totalW, graphH, 12) else rect(24, graphY, totalW, graphH, 12, C.panel) end
+    -- Peak hold for the variants: each band's peak falls slowly after a hit.
+    local values = {}
     for i = 0, barCount - 1 do
+        local v = M.clamp(measure('Band' .. i), 0, 1)
+        values[i] = v
+        spectrumPeaks[i] = math.max(v, (spectrumPeaks[i] or 0) - .015)
+    end
+    if variant == 'SpectrumLine' then
+        -- A smooth curve through the bands (Catmull-Rom), filled down to the baseline.
+        local x0, x1 = 24 + 10, 24 + totalW - 10
+        local base, top = graphY + graphH - 8, graphY + 8
+        local function P(i) i = M.clamp(i, 0, barCount - 1); return values[i] end
+        for k = 1, 3 do
+            local gy = base - (base - top) * k / 4
+            line(x0, gy, x1, gy, C.grid, 1)
+        end
+        local pts = {}
+        local step = (x1 - x0) / (barCount - 1)
+        for i = 0, barCount - 2 do
+            local p0, p1, p2, p3 = P(i - 1), P(i), P(i + 1), P(i + 2)
+            for s = 0, 3 do
+                local t = s / 4
+                local v = .5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t)
+                pts[#pts + 1] = {x0 + (i + t) * step, base - (base - top) * M.clamp(v, 0, 1)}
+            end
+        end
+        pts[#pts + 1] = {x1, base - (base - top) * values[barCount - 1]}
+        local area = {{x0, base}}
+        for _, p in ipairs(pts) do area[#area + 1] = p end
+        area[#area + 1] = {x1, base}
+        poly(area, C.accent .. ',55')
+        path(pts, C.accent, 2)
+        for i = 0, barCount - 1 do
+            circle(x0 + i * step, base - (base - top) * spectrumPeaks[i], 2, i < 11 and C.text or C.secondary)
+        end
+    elseif variant == 'SpectrumLED' then
+        -- Discrete LED blocks: lit from the bottom, the top two in the secondary color, and a peak-hold block.
+        local segs = 12
+        local pitch = (graphH - 14) / segs
+        for i = 0, barCount - 1 do
+            local bx = 24 + i * (barW + gap)
+            local lit = math.floor(values[i] * segs + .5)
+            local peak = math.ceil(spectrumPeaks[i] * segs - .01)
+            for s = 1, segs do
+                local by = graphY + graphH - 7 - s * pitch + 1
+                local color = led and C.track or C.chip
+                if s <= lit then color = s > segs - 2 and C.secondary or C.accent
+                elseif s == peak then color = C.text end
+                rect(bx, by, barW, pitch - 2, 1.5, color)
+            end
+        end
+    end
+    for i = 0, (variant == 'Spectrum' and barCount - 1 or -1) do
         local val = M.clamp(measure('Band' .. i), 0, 1)
         local bx = 24 + i * (barW + gap)
         local bh = math.max(3, val * (graphH - 14))
@@ -1542,7 +1624,7 @@ local function spectrum()
         -- Bass/mid in the accent, treble in the secondary color.
         rect(bx, by, barW, bh, radius, i < 11 and C.accent or C.secondary)
     end
-    if led then
+    if led and variant == 'Spectrum' then
         -- Panel-colored gaps across the bars turn them into LED segments.
         for yy = graphY + graphH - 7 - 5, graphY + 9, -5 do line(24 + 4, yy, 24 + totalW - 4, yy, C.panel, 1.6) end
     end
@@ -1552,6 +1634,96 @@ local function spectrum()
     text('TREBLE', W - 24, labelY, 9, C.muted, totalW / 3, nil, 'Right')
     text(string.format('PEAK L:%.0f%%  R:%.0f%%', peakL * 100, peakR * 100), 24, footerY, 10, C.muted, W - 144)
     text('Sound ↗', W - 24, footerY, 11, C.muted, 100, '["ms-settings:sound"]', 'Right')
+end
+-- Now Playing: NowPlaying.ps1 (started by the skin through RunCommand) mirrors Windows' media
+-- session into Data\nowplaying.txt and runs commands left in Data\nowplaying.cmd.
+function MediaCommand(cmd)
+    local file=io.open(var('@')..'Data\\nowplaying.cmd','w')
+    if file then file:write(cmd);file:close() end
+    -- Flip play/pause at once; the helper's next report confirms it.
+    if cmd=='toggle' and media then media.playing=not media.playing;media.flipped=os.time() end
+end
+function SetAudioVolume(v)
+    SKIN:Bang('!CommandMeasure','MeasureAudioVol','SetVolume '..tostring(v))
+end
+local function glyph(code,cx,cy,size,color,act)
+    -- Segoe MDL2 Assets icon centred on cx,cy.
+    local h=size*1.4+4
+    text(code,cx,cy-h/2+size*.1,size,color,size*1.6,act,'Center','Segoe MDL2 Assets','fixed')
+end
+local function nowPlaying(now)
+    local file=io.open(var('@')..'Data\\nowplaying.txt','rb')
+    local m={}
+    if file then m=M.parseMedia(file:read('*a') or '');file:close() end
+    -- A flipped play state holds until the helper reports or 3 s pass.
+    if media and media.flipped and now-media.flipped<3 and m.title==media.title then m.playing=media.playing;m.flipped=media.flipped end
+    media=m
+    -- The helper rewrites its heartbeat every few seconds; an old file means it is not running.
+    local alive=m.heartbeat and math.abs(now-m.heartbeat)<20
+    local active=alive and m.active
+    header('NOW PLAYING',active and string.upper(M.mediaSource(m.app)) or nil)
+    local art=76
+    local ax,ay=24,48
+    -- Cover art: an Image meter clipped by a rounded mask (both in the NowPlaying skin).
+    rect(ax,ay,art,art,14,C.chip)
+    local cover=active and m.cover and m.cover~='' and m.cover
+    if cover then
+        set('CoverMask','Shape','Rectangle 0,0,'..f(art)..','..f(art)..','..f(14)..' | Fill Color 255,255,255 | StrokeWidth 0')
+        set('CoverMask','X',f(ax));set('CoverMask','Y',f(ay));set('CoverMask','Hidden',0)
+        set('Cover','ImageName',var('@')..'Data\\'..cover)
+        set('Cover','W',f(art));set('Cover','H',f(art));set('Cover','Hidden',0)
+    else
+        set('CoverMask','Hidden',1);set('Cover','Hidden',1)
+        glyph('[\\xE8D6]',ax+art/2,ay+art/2,28,C.accent)
+    end
+    local tx=ax+art+14
+    local tw=W-tx-24
+    local function trim(value,size) return M.utf8Trim(value,math.max(4,math.floor((tw-2)/(size*T*.6)))) end
+    if active then
+        text(trim(m.title,14),tx,ay+4,14,C.text,tw)
+        local by=ay+4+labelHeight(14)+2
+        if (m.artist or '')~='' then text(trim(m.artist,11),tx,by,11,C.muted,tw);by=by+labelHeight(11) end
+        if (m.album or '')~='' and m.album~=m.title then text(trim(m.album,10),tx,by,10,C.muted,tw) end
+    else
+        text(alive and 'Nothing playing' or 'Starting media helper',tx,ay+4,14,C.text,tw)
+        text(alive and 'Play music in any app' or 'Reads Windows media controls',tx,ay+4+labelHeight(14)+2,11,C.muted,tw)
+    end
+    -- Progress, when the player reports a timeline.
+    local y=ay+art+12
+    local pos=active and M.mediaPosition(m,now)
+    if pos then
+        bar(24,y,W-48,4,pos/m.duration,C.accent)
+        text(M.trackTime(pos),24,y+10,9,C.muted,80)
+        text(M.trackTime(m.duration),W-24,y+10,9,C.muted,80,nil,'Right')
+    else
+        bar(24,y,W-48,4,0,C.accent)
+    end
+    -- Transport: previous, play/pause, next.
+    local cy=y+10+labelHeight(9)+22
+    local cx=W/2
+    local live=active and C.text or C.muted
+    circle(cx-62,cy,17,C.chip)
+    glyph('[\\xE892]',cx-62,cy,14,(active and m.canPrev~='0') and live or C.muted,action("MediaCommand('prev')"))
+    circle(cx,cy,23,active and C.accent or C.chip)
+    glyph(m.playing and active and '[\\xE769]' or '[\\xE768]',cx,cy,18,active and C.surface or C.muted,action("MediaCommand('toggle')"))
+    circle(cx+62,cy,17,C.chip)
+    glyph('[\\xE893]',cx+62,cy,14,(active and m.canNext~='0') and live or C.muted,action("MediaCommand('next')"))
+    -- Volume: mute toggle, a bar that sets the level where clicked, and the reading.
+    local vol=measure('MeasureAudioVol')
+    local muted=vol<0
+    local level=muted and 0 or M.clamp(vol,0,100)
+    local vy=cy+23+16
+    local rowH=labelHeight(11)
+    glyph(muted and '[\\xE74F]' or '[\\xE767]',34,vy+rowH/2,14,muted and C.muted or C.accent,action('ToggleAudioMute()'))
+    local bx,bw=54,W-54-24-44
+    bar(bx,vy+rowH/2-3,bw,6,level/100,muted and C.muted or C.accent)
+    for i=1,10 do
+        text(' ',bx+(i-1)*bw/10,vy,10,C.muted,bw/10,action('SetAudioVolume('..(i*10)..')'))
+        texts[#texts].H=f(rowH);texts[#texts].SolidColor='0,0,0,1'
+        texts[#texts].ToolTipText='Volume '..(i*10)..'%'
+    end
+    text(muted and 'MUTE' or string.format('%.0f%%',level),W-24,vy,11,C.muted,40,nil,'Right')
+    H=vy+rowH+14
 end
 local function cores()
     local totalCpu = M.clamp(measure('CPU0'), 0, 100)
@@ -1796,13 +1968,14 @@ local function settings()
     text('Load all widgets',W-26,438,11,C.accent,200,action('LoadAll()'),'Right')
     texts[#texts].ToolTipText='Loads the full version of every widget that is not open yet'
     local widgetList={'Battery','Network','Vitals','Clock','Shortcuts','Audio','Cores','SysInfo','Diagnostics','Spectrum',
-        'Calendar','Processes','DiskIO','Binary','GPU','Focus','Countdown','Weather','Progress','SunMoon','Analog','StatusBar',
+        'Calendar','Processes','DiskIO','Binary','GPU','Focus','Countdown','Weather','Progress','SunMoon','Analog','StatusBar','NowPlaying',
         'BatteryCompact','BinaryCompact','VitalsCompact','NetworkCompact','ClockCompact','ProcessesMap',
-        'WeatherCompact','CalendarWeek','GPUCompact','CoresRings','FocusCompact','CountdownCompact','DiskIODrives','DiagnosticsCompact'}
+        'WeatherCompact','CalendarWeek','GPUCompact','CoresRings','FocusCompact','CountdownCompact','DiskIODrives','DiagnosticsCompact','SpectrumLine','SpectrumLED'}
     local labels={DiskIO='Disk I/O',Focus='Focus Timer',Progress='Day Progress',SunMoon='Sun & Moon',StatusBar='Status Bar',
         BatteryCompact='Battery Mini',BinaryCompact='Binary Mini',VitalsCompact='Vitals Mini',NetworkCompact='Network Mini',ClockCompact='Clock Mini',ProcessesMap='Process Map',
         WeatherCompact='Weather Mini',CalendarWeek='Calendar Week',GPUCompact='GPU Mini',CoresRings='Cores Rings',FocusCompact='Focus Mini',
-        CountdownCompact='Countdown Mini',DiskIODrives='Disk Drives',DiagnosticsCompact='Ping Mini'}
+        CountdownCompact='Countdown Mini',DiskIODrives='Disk Drives',DiagnosticsCompact='Ping Mini',
+        NowPlaying='Now Playing',SpectrumLine='Spectrum Line',SpectrumLED='Spectrum LED'}
     for i,v in ipairs(widgetList) do
         local row=math.floor((i-1)/4);local col=(i-1)%4
         button(labels[v] or v,24+col*115,456+row*36,107,false,"Load('"..v.."')",bh)
@@ -1868,7 +2041,7 @@ end
 local fullWidgets={{'Battery',250},{'Network',230},{'Vitals',270},{'Clock',220},{'Shortcuts',136},{'Audio',190},
     {'Cores',260},{'SysInfo',260},{'Diagnostics',280},{'Spectrum',220},{'Calendar',300},{'Processes',330},
     {'DiskIO',300},{'Binary',270},{'GPU',330},{'Focus',262},{'Countdown',250},{'Weather',330},
-    {'Progress',270},{'SunMoon',330},{'Analog',260},{'StatusBar',46}}
+    {'Progress',270},{'SunMoon',330},{'Analog',260},{'StatusBar',46},{'NowPlaying',260}}
 -- Loads every widget that is not open, leaving open ones (Mini or full) as they are.
 -- Widgets Rainmeter has never placed are laid out in columns instead of stacking at 0,0.
 function LoadAll()
@@ -1900,11 +2073,12 @@ function Load(name)
     local allowed={Battery=true,Network=true,Vitals=true,Clock=true,Shortcuts=true,
         Audio=true,Cores=true,SysInfo=true,Diagnostics=true,Spectrum=true,
         Calendar=true,Processes=true,DiskIO=true,Binary=true,GPU=true,Focus=true,Countdown=true,Weather=true,
-        Progress=true,SunMoon=true,Analog=true,StatusBar=true}
+        Progress=true,SunMoon=true,Analog=true,StatusBar=true,NowPlaying=true}
     -- Compact variants share their widget's config, so loading one swaps the other.
     local compact={BatteryCompact='Battery',BinaryCompact='Binary',VitalsCompact='Vitals',NetworkCompact='Network',ClockCompact='Clock',ProcessesMap='Processes',
         WeatherCompact='Weather',CalendarWeek='Calendar',GPUCompact='GPU',CoresRings='Cores',FocusCompact='Focus',
-        CountdownCompact='Countdown',DiskIODrives='DiskIO',DiagnosticsCompact='Diagnostics'}
+        CountdownCompact='Countdown',DiskIODrives='DiskIO',DiagnosticsCompact='Diagnostics',
+        SpectrumLine='Spectrum',SpectrumLED='Spectrum'}
     -- Older variants are Compact.ini; newer ones are <Widget>Compact.ini so they sort after the full card.
     local file={BatteryCompact='Compact.ini',BinaryCompact='Compact.ini'}
     if compact[name] then SKIN:Bang('!ActivateConfig','NerdWidgets\\'..compact[name],file[name] or name..'.ini')
@@ -1964,6 +2138,7 @@ function Update()
     elseif kind=='Shortcuts' then shortcuts()
     elseif kind=='Audio' then audio()
     elseif kind=='Spectrum' then spectrum()
+    elseif kind=='NowPlaying' then nowPlaying(now)
     elseif kind=='Cores' then cores()
     elseif kind=='SysInfo' then sysinfo()
     elseif kind=='Diagnostics' then diagnostics(now)

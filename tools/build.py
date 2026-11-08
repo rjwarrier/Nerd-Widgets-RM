@@ -169,6 +169,28 @@ Group=NerdWidgetsDrawing
     statusbar = battery + network + measure('CPU','CPU',Processor=0)
     statusbar += measure('RAM','PhysicalMemory') + measure('RAMTotal','PhysicalMemory',Total=1)
     statusbar += measure('Ping','Plugin',Plugin='PingPlugin',DestAddress='#PingHost#',UpdateRate=5)
+    # Now Playing: NowPlaying.ps1 mirrors Windows' media session (GlobalSystemMediaTransportControls)
+    # into Data\nowplaying.txt. RunCommand keeps it hidden and ends it when the skin closes or refreshes.
+    nowplaying = audio + measure('NowPlayingHelper','Plugin',Plugin='RunCommand',Program='powershell.exe',
+        Parameter='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "#@#Scripts\\NowPlaying.ps1" "#@#Data"',
+        State='Hide',Timeout=-1,OutputType='ANSI')
+    # Cover art: an Image meter clipped to a rounded Shape (Container), both positioned by Widget.lua.
+    nowplaying_meters = '''
+[CoverMask]
+Meter=Shape
+Shape=Rectangle 0,0,1,1 | Fill Color 255,255,255 | StrokeWidth 0
+Hidden=1
+DynamicVariables=1
+
+[Cover]
+Meter=Image
+Container=CoverMask
+X=0
+Y=0
+PreserveAspectRatio=2
+Hidden=1
+DynamicVariables=1
+'''
     # Defaults that a user's older Settings.inc may lack; the Settings.inc include overrides them.
     defaults = {'Weather': 'WeatherEnabled=0\nWeatherLatitude=0\nWeatherLongitude=0\nWeatherCity=\n'
                            'WeatherTempUnit=celsius\nWeatherWindUnit=kmh\nWeatherWidth=340\n',
@@ -177,12 +199,15 @@ Group=NerdWidgetsDrawing
                 'Processes': 'ProcessesWidth=340\n','DiskIO': 'DiskIOWidth=340\n','Binary': 'BinaryWidth=340\n','Battery': 'BatteryWidth=340\nBatteryRange=360\nBatteryAutoScale=0\n',
                 'Progress': 'ProgressWidth=340\nWeekStart=Mon\n','Analog': 'AnalogWidth=340\nAnalogSeconds=1\n',
                 'SunMoon': 'SunMoonWidth=340\nWeatherLatitude=0\nWeatherLongitude=0\nWeatherCity=\n',
-                'StatusBar': 'StatusBarWidth=800\nPingHost=1.1.1.1\nNetworkInterface=Best\n'}
+                'StatusBar': 'StatusBarWidth=800\nPingHost=1.1.1.1\nNetworkInterface=Best\n',
+                'NowPlaying': 'NowPlayingWidth=340\n'}
     variants = [('Battery','Battery',340,280,battery),('Battery','Compact',340,168,battery),
                 ('Network','Network',340,230,network),('Network','NetworkCompact',340,150,network),
                 ('Vitals','Vitals',340,270,vitals),('Vitals','VitalsCompact',340,140,vitals),
                 ('Clock','Clock',340,220,''),('Clock','ClockCompact',340,120,''),('Shortcuts','Shortcuts',500,136,''),
                 ('Audio','Audio',340,190,audio),('Spectrum','Spectrum',340,220,spectrum),
+                ('Spectrum','SpectrumLED',340,220,spectrum),('Spectrum','SpectrumLine',340,220,spectrum),
+                ('NowPlaying','NowPlaying',340,260,nowplaying),
                 ('Cores','Cores',340,260,cores),('Cores','CoresRings',340,260,cores),('SysInfo','SysInfo',340,260,sysinfo),
                 ('Diagnostics','Diagnostics',340,280,diagnostics),('Diagnostics','DiagnosticsCompact',340,140,diagnostics),
                 ('Calendar','Calendar',340,300,''),('Calendar','CalendarWeek',340,160,''),('Processes','Processes',340,330,processes),('Processes','ProcessesMap',340,330,processes),
@@ -201,8 +226,14 @@ Group=NerdWidgetsDrawing
 MouseLeaveAction=[!CommandMeasure MeasureRenderer "EndDrag()"]
 OnCloseAction=[!CommandMeasure MeasureRenderer "EndDrag()"]
 ''' if kind=='Settings' else ''
-        slider_include='@IncludeSliders=#@#Sliders.inc' if kind=='Settings' else ''
-        update_override = 'Update=40\n' if kind == 'Spectrum' else ''
+        if kind == 'NowPlaying':
+            # Start the media helper; scrolling anywhere on the card changes the volume.
+            events = '''OnRefreshAction=[!CommandMeasure NowPlayingHelper "Run"]
+MouseScrollUpAction=[!CommandMeasure MeasureAudioVol "ChangeVolume 2"]
+MouseScrollDownAction=[!CommandMeasure MeasureAudioVol "ChangeVolume -2"]
+'''
+        slider_include='@IncludeSliders=#@#Sliders.inc' if kind=='Settings' else nowplaying_meters if kind=='NowPlaying' else ''
+        update_override = 'Update=40\n' if kind == 'Spectrum' else 'Update=500\n' if kind == 'NowPlaying' else ''
         extra_vars = 'CoreCount=%NUMBER_OF_PROCESSORS%\n' if kind == 'Cores' else ''
         write(SKIN / kind / f'{name}.ini', f'''[Rainmeter]
 @Include=#@#Common.inc

@@ -391,4 +391,55 @@ function M.coreCount(raw)
     local n = tonumber(raw) or 1
     return M.clamp(math.floor(n), 1, 32)
 end
+-- Now Playing: the helper writes key=value lines (UTF-8) for Windows' current media session.
+function M.parseMedia(text)
+    local m = {}
+    for line in tostring(text or ''):gmatch('[^\r\n]+') do
+        local k, v = line:match('^(%w+)=(.*)$')
+        if k then m[k] = v end
+    end
+    for _, k in ipairs({'duration', 'position', 'updated', 'heartbeat'}) do m[k] = tonumber(m[k]) end
+    m.playing = m.status == 'Playing'
+    m.active = (m.title or '') ~= '' and m.status ~= 'Closed'
+    return m
+end
+-- Position now: the session reports it only on changes, so a playing track runs on from then.
+function M.mediaPosition(m, now)
+    if not m.duration or m.duration <= 0 or not m.position then return nil end
+    local p = m.position
+    if m.playing and m.updated and m.updated > 0 then p = p + math.max(0, now - m.updated) end
+    return M.clamp(p, 0, m.duration)
+end
+function M.trackTime(seconds)
+    seconds = math.floor(math.max(0, seconds or 0))
+    local h, m, s = math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60
+    if h > 0 then return string.format('%d:%02d:%02d', h, m, s) end
+    return string.format('%d:%02d', m, s)
+end
+-- Friendly player name from the session's app id (an exe name or a packaged app id).
+function M.mediaSource(id)
+    id = tostring(id or '')
+    local lower = id:lower()
+    local known = {{'spotify', 'Spotify'}, {'zunemusic', 'Media Player'}, {'zunevideo', 'Films & TV'},
+        {'msedge', 'Edge'}, {'chrome', 'Chrome'}, {'firefox', 'Firefox'}, {'308046b0af4a39cb', 'Firefox'},
+        {'brave', 'Brave'}, {'opera', 'Opera'}, {'vlc', 'VLC'}, {'applemusic', 'Apple Music'}, {'itunes', 'iTunes'},
+        {'foobar', 'foobar2000'}, {'musicbee', 'MusicBee'}, {'amazonmusic', 'Amazon Music'}, {'tidal', 'TIDAL'},
+        {'deezer', 'Deezer'}, {'youtube', 'YouTube Music'}}
+    for _, k in ipairs(known) do if lower:find(k[1], 1, true) then return k[2] end end
+    local name = id:match('([^\\/!]+)$') or id
+    name = name:gsub('%.exe$', ''):gsub('_.*$', '')
+    return name ~= '' and name or 'Media'
+end
+-- Trims to a character count without cutting a UTF-8 sequence.
+function M.utf8Trim(value, maxChars)
+    value = tostring(value or '')
+    local chars, cut = 0, nil
+    for pos in value:gmatch('()[^\128-\191]') do
+        chars = chars + 1
+        if chars == maxChars then cut = pos end
+    end
+    if chars <= maxChars then return value end
+    return value:sub(1, cut - 1) .. '…'
+end
+
 return M

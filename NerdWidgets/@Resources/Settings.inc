@@ -34,6 +34,7 @@ ProgressWidth=340
 SunMoonWidth=340
 AnalogWidth=340
 StatusBarWidth=800
+NowPlayingWidth=340
 PingHost=1.1.1.1
 ; Best follows the active adapter; you may use an adapter alias such as Wi-Fi.
 NetworkInterface=Best
