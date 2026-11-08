@@ -3,6 +3,8 @@ local M, kind, variant, W, H, S, C, shapes, texts, cache, history, down, up, cpu
 local lastShape, lastText, historyFile, sampleTime, sessionStart, sessionLevel, sessionAC
 local T,N,baseH,hits,lastHit,drag,look,gpuList
 local spectrumPeaks,media={},nil
+-- Spectrum idles when silent: updates since the last sound, and whether the meters are slowed.
+local spectrumQuiet,spectrumIdle,spectrumLoud,spectrumSkip=0,false,false,0
 -- Forward-declared so cards defined earlier in the file can use it.
 local button
 local palettes = {
@@ -42,12 +44,19 @@ local instrument={
 }
 local function var(name, default) return SKIN:GetVariable(name, default or '') end
 local function num(name, default) return tonumber(var(name)) or default end
+-- Measure handles live as long as the skin, so each is looked up once.
+local handles={}
+local function handle(name)
+    local m=handles[name]
+    if m==nil then m=SKIN:GetMeasure(name) or false;handles[name]=m end
+    return m
+end
 local function measure(name)
-    local m=SKIN:GetMeasure(name)
+    local m=handle(name)
     return m and m:GetValue() or 0
 end
 local function measureString(name, default)
-    local m=SKIN:GetMeasure(name)
+    local m=handle(name)
     return m and m:GetStringValue() or default or ''
 end
 local function set(section, option, value)
@@ -1578,10 +1587,12 @@ local function spectrum()
     if led then graphPanel(24, graphY, totalW, graphH, 12) else rect(24, graphY, totalW, graphH, 12, C.panel) end
     -- Peak hold for the variants: each band's peak falls slowly after a hit.
     local values = {}
+    spectrumLoud = peakL > .002 or peakR > .002
     for i = 0, barCount - 1 do
         local v = M.clamp(measure('Band' .. i), 0, 1)
         values[i] = v
         spectrumPeaks[i] = math.max(v, (spectrumPeaks[i] or 0) - .015)
+        if v > .002 or spectrumPeaks[i] > .002 then spectrumLoud = true end
     end
     if variant == 'SpectrumLine' then
         -- A smooth curve through the bands (Catmull-Rom), filled down to the baseline.
@@ -1629,7 +1640,7 @@ local function spectrum()
         end
     end
     for i = 0, (variant == 'Spectrum' and barCount - 1 or -1) do
-        local val = M.clamp(measure('Band' .. i), 0, 1)
+        local val = values[i]
         local bx = 24 + i * (barW + gap)
         local bh = math.max(3, val * (graphH - 14))
         local by = graphY + graphH - 7 - bh
@@ -2159,6 +2170,15 @@ function Initialize()
     end
 end
 function Update()
+    if kind=='Spectrum' and spectrumIdle then
+        -- Idle: only listen for sound, and draw once a second (when the slowed meters update).
+        spectrumSkip=(spectrumSkip+1)%25
+        if spectrumSkip~=0 then
+            local heard=measure('PeakL')>.002 or measure('PeakR')>.002
+            for i=0,15 do if heard then break end;heard=measure('Band'..i)>.002 end
+            if not heard then return 0 end
+        end
+    end
     shapes={};texts={};hits={};H=baseH;DebugChips={}
     if kind~='Settings' then
         S=M.size('Scale',num('Scale',1)) or 1
@@ -2202,5 +2222,18 @@ function Update()
     for i=#hits+1,lastHit do set('SliderHit'..i,'Hidden',1) end
     set('Canvas','W',f(W));set('Canvas','H',f(H))
     lastShape=#shapes;lastText=#texts;lastHit=#hits
+    if kind=='Spectrum' then
+        -- Silent for 2 s: the drawing meters update once a second instead of 25 times, so an idle
+        -- card stops redrawing. The first sound restores the full rate and applies this frame at once.
+        spectrumQuiet=spectrumLoud and 0 or spectrumQuiet+1
+        if spectrumLoud and spectrumIdle then
+            spectrumIdle=false
+            SKIN:Bang('!SetOptionGroup','NerdWidgetsDrawing','UpdateDivider','1')
+            SKIN:Bang('!UpdateMeterGroup','NerdWidgetsDrawing')
+        elseif not spectrumIdle and spectrumQuiet>=50 then
+            spectrumIdle=true
+            SKIN:Bang('!SetOptionGroup','NerdWidgetsDrawing','UpdateDivider','25')
+        end
+    end
     return 0
 end

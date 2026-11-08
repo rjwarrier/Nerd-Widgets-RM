@@ -16,9 +16,13 @@ $cmdFile = Join-Path $DataDir 'nowplaying.cmd'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Write-State([string]$text) {
+    # Written aside, then swapped in, so the card never reads half a file. .NET calls, not
+    # Move-Item: the cmdlet costs tens of milliseconds of CPU per call.
     $tmp = "$stateFile.new"
     [System.IO.File]::WriteAllText($tmp, $text, $utf8)
-    Move-Item -LiteralPath $tmp -Destination $stateFile -Force
+    # [NullString]: a plain $null reaches .NET as '' and Replace rejects it.
+    if ([System.IO.File]::Exists($stateFile)) { [System.IO.File]::Replace($tmp, $stateFile, [NullString]::Value) }
+    else { [System.IO.File]::Move($tmp, $stateFile) }
 }
 
 try {
@@ -69,24 +73,29 @@ function Save-Cover($properties) {
 }
 
 $parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+# Held once and polled through HasExited: Get-Process each time costs milliseconds of CPU.
+$parentProcess = $null
+try { $parentProcess = [System.Diagnostics.Process]::GetProcessById($parent) } catch { }
 $manager = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
 $propertiesType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]
 
 $last = ''
 $lastWrite = [DateTime]::MinValue
+$lastRead = [DateTime]::MinValue
 $trackKey = ''
 $cover = ''
 $coverTries = 0
-$tick = 0
+# The loop runs five times a second so buttons respond quickly; the media session is read once a
+# second. FileSystemWatcher.WaitForChanged and Wait-Event were both tried and cost more CPU.
 while ($true) {
-    if ($tick % 25 -eq 0 -and $parent -and -not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { break }
+    if ($parentProcess -and $parentProcess.HasExited) { break }
     $session = $null
     try { $session = $manager.GetCurrentSession() } catch { }
     $acted = $false
     if (Test-Path -LiteralPath $cmdFile) {
         $command = ''
-        try { $command = (Get-Content -LiteralPath $cmdFile -Raw).Trim() } catch { }
-        Remove-Item -LiteralPath $cmdFile -Force -ErrorAction SilentlyContinue
+        try { $command = [System.IO.File]::ReadAllText($cmdFile).Trim() } catch { }
+        try { [System.IO.File]::Delete($cmdFile) } catch { }
         if ($session) {
             $operation = switch ($command) {
                 'toggle' { $session.TryTogglePlayPauseAsync() }
@@ -101,7 +110,8 @@ while ($true) {
             }
         }
     }
-    if ($acted -or $tick % 5 -eq 0) {
+    if ($acted -or ([DateTime]::UtcNow - $lastRead).TotalMilliseconds -ge 950) {
+        $lastRead = [DateTime]::UtcNow
         $lines = New-Object System.Collections.Generic.List[string]
         try {
             if ($session) {
@@ -152,6 +162,5 @@ while ($true) {
             } catch { }
         }
     }
-    $tick++
     Start-Sleep -Milliseconds 200
 }

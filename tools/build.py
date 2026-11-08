@@ -41,6 +41,9 @@ Information=Windows adaptation of the original Nerd Widgets Battery family.
 License=Personal project
 '''
     write(RES / 'Common.inc', common)
+    # The drawing meters have no DynamicVariables: Widget.lua changes them only through
+    # !SetOption, which makes Rainmeter re-read just the meters that changed, once.
+    # With DynamicVariables=1 every pooled meter (mostly hidden) was re-parsed on each update.
     meters = '''[MeasureRenderer]
 Measure=Script
 ScriptFile=#@#Scripts\\Widget.lua
@@ -49,7 +52,6 @@ Group=NerdWidgetsRenderer
 [Canvas]
 Meter=Shape
 Shape=Rectangle 0,0,1,1 | StrokeWidth 0 | Fill Color 0,0,0,0
-DynamicVariables=1
 Group=NerdWidgetsDrawing
 '''
     # 100 pooled text meters; ModelTests checks no card exceeds the pool.
@@ -61,7 +63,6 @@ FontSize=10
 FontColor=255,255,255
 AntiAlias=1
 ClipString=1
-DynamicVariables=1
 Hidden=1
 Group=NerdWidgetsDrawing
 '''
@@ -72,7 +73,6 @@ Group=NerdWidgetsDrawing
 Meter=Image
 SolidColor=0,0,0,1
 Hidden=1
-DynamicVariables=1
 MouseActionCursor=1
 Group=NerdWidgetsDrawing
 '''
@@ -180,7 +180,6 @@ Group=NerdWidgetsDrawing
 Meter=Shape
 Shape=Rectangle 0,0,1,1 | Fill Color 255,255,255 | StrokeWidth 0
 Hidden=1
-DynamicVariables=1
 
 [Cover]
 Meter=Image
@@ -189,7 +188,6 @@ X=0
 Y=0
 PreserveAspectRatio=2
 Hidden=1
-DynamicVariables=1
 '''
     # Defaults that a user's older Settings.inc may lack; the Settings.inc include overrides them.
     defaults = {'Weather': 'WeatherEnabled=0\nWeatherLatitude=0\nWeatherLongitude=0\nWeatherCity=\n'

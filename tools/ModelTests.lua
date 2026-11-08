@@ -226,6 +226,22 @@ function Initialize()
             -- Exercise the timer buttons: start, pause, resume, skip, reset.
             env.FocusToggle();env.Update();env.FocusToggle();env.FocusToggle();env.FocusSkip();env.Update();env.FocusReset();env.Update()
           end
+          if kind=='Spectrum' and flags==255 then
+            -- Two seconds of silence slow the drawing meters; the first sound restores them at once.
+            local seen,real={},mock.Bang
+            function mock:Bang(b,s,k,v) seen[#seen+1]=table.concat({b,tostring(s),tostring(k),tostring(v)},' ');return real(self,b,s,k,v) end
+            readings.PeakL=0;readings.PeakR=0
+            for _=1,60 do env.Update() end
+            local idle=0
+            for _,b in ipairs(seen) do if b=='!SetOptionGroup NerdWidgetsDrawing UpdateDivider 25' then idle=idle+1 end end
+            check(idle==1,'Spectrum idles once after silence: '..entry)
+            seen={};readings.Band3=.5;env.Update()
+            check(seen[#seen-1]=='!SetOptionGroup NerdWidgetsDrawing UpdateDivider 1' and seen[#seen]=='!UpdateMeterGroup NerdWidgetsDrawing nil nil',
+              'Spectrum wakes on sound: '..entry)
+            seen={};env.Update()
+            check(#seen==0 or not seen[#seen]:find('Group'),'Spectrum stays awake: '..entry)
+            readings.Band3=0;readings.PeakL=.4;readings.PeakR=.4;mock.Bang=real
+          end
           for name,o in pairs(options) do
             if name:match('^Text') and o.Hidden=='0' then
               check(tonumber(o.X)>=0 and tonumber(o.Y)>=0,'Negative position: '..kind)
