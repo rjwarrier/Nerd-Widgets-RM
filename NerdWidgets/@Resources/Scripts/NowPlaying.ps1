@@ -52,23 +52,37 @@ function Clean($value) {
     return ([string]$value -replace '[\r\n\t]+', ' ').Trim()
 }
 
-$coverIndex = 0
-function Save-Cover($properties) {
-    if (-not $properties -or -not $properties.Thumbnail) { return '' }
+# The current thumbnail's bytes, or $null when the player offers none.
+function Read-Cover($properties) {
+    if (-not $properties -or -not $properties.Thumbnail) { return $null }
     $stream = Await ($properties.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
-    if (-not $stream) { return '' }
+    if (-not $stream) { return $null }
     # PowerShell cannot bind the stream it gets back, so call the converter through reflection.
     $source = $asStream.Invoke($null, @($stream))
     $bytes = New-Object System.IO.MemoryStream
     try { $source.CopyTo($bytes) } finally { $source.Close() }
     $data = $bytes.ToArray()
-    if ($data.Length -lt 8) { return '' }
+    if ($data.Length -lt 8) { return $null }
+    return , $data
+}
+
+# Every cover gets a name never used before (this run's start time plus a counter), so Rainmeter
+# never shows an image it cached under the same path, even across helper restarts.
+$coverRun = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$coverCount = 0
+$coverFiles = New-Object System.Collections.Generic.Queue[string]
+Get-ChildItem -LiteralPath $DataDir -Filter 'cover-*' | Remove-Item -Force -ErrorAction SilentlyContinue
+$md5 = [System.Security.Cryptography.MD5]::Create()
+function Save-Cover([byte[]]$data) {
     $extension = if ($data[0] -eq 0x89 -and $data[1] -eq 0x50) { 'png' } else { 'jpg' }
-    # Rotating names, so Rainmeter never shows a cached older image under the same path.
-    $script:coverIndex = ($script:coverIndex + 1) % 8
-    Get-ChildItem -LiteralPath $DataDir -Filter "cover-$($script:coverIndex).*" | Remove-Item -Force -ErrorAction SilentlyContinue
-    $name = "cover-$($script:coverIndex).$extension"
+    $script:coverCount++
+    $name = "cover-$coverRun-$($script:coverCount).$extension"
     [System.IO.File]::WriteAllBytes((Join-Path $DataDir $name), $data)
+    # Keep the last few, since the card may still be showing the previous one.
+    $coverFiles.Enqueue($name)
+    while ($coverFiles.Count -gt 3) {
+        try { [System.IO.File]::Delete((Join-Path $DataDir $coverFiles.Dequeue())) } catch { }
+    }
     return $name
 }
 
@@ -84,7 +98,9 @@ $lastWrite = [DateTime]::MinValue
 $lastRead = [DateTime]::MinValue
 $trackKey = ''
 $cover = ''
-$coverTries = 0
+$coverHash = ''
+$trackSince = [DateTime]::UtcNow
+$coverCheck = [DateTime]::MinValue
 # The loop runs five times a second so buttons respond quickly; the media session is read once a
 # second. FileSystemWatcher.WaitForChanged and Wait-Event were both tried and cost more CPU.
 while ($true) {
@@ -123,11 +139,21 @@ while ($true) {
                 if (-not $artist) { $artist = Clean $properties.AlbumArtist }
                 $app = Clean $session.SourceAppUserModelId
                 $key = "$app|$title|$artist"
-                if ($key -ne $trackKey) { $trackKey = $key; $cover = ''; $coverTries = 0 }
-                # Players often publish the cover a moment after the title, so retry a few times.
-                if (-not $cover -and $coverTries -lt 4) {
-                    $coverTries++
-                    try { $cover = Save-Cover $properties } catch { $cover = '' }
+                if ($key -ne $trackKey) { $trackKey = $key; $trackSince = [DateTime]::UtcNow }
+                # Players often publish the new title while still offering the old cover, and some
+                # change the cover later. So the thumbnail is read every second for 10 s after a
+                # track change, then every 15 s; a file is written only when the image changes.
+                $now = [DateTime]::UtcNow
+                if (($now - $trackSince).TotalSeconds -lt 10 -or ($now - $coverCheck).TotalSeconds -ge 15) {
+                    $coverCheck = $now
+                    try {
+                        $data = Read-Cover $properties
+                        if (-not $data) { $cover = ''; $coverHash = '' }
+                        else {
+                            $hash = [BitConverter]::ToString($md5.ComputeHash($data))
+                            if ($hash -ne $coverHash) { $cover = Save-Cover $data; $coverHash = $hash }
+                        }
+                    } catch { }
                 }
                 $duration = ($timeline.EndTime - $timeline.StartTime).TotalSeconds
                 $position = ($timeline.Position - $timeline.StartTime).TotalSeconds
@@ -145,7 +171,7 @@ while ($true) {
                     $lines.Add("updated=$($timeline.LastUpdatedTime.ToUnixTimeSeconds())")
                 }
             } else {
-                $trackKey = ''; $cover = ''
+                $trackKey = ''; $cover = ''; $coverHash = ''
                 $lines.Add('status=Closed')
             }
         } catch {
