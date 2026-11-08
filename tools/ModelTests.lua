@@ -57,7 +57,35 @@ function Initialize()
             {'Chapter 7 (Part 2)','','','AudibleInc.Audible_x','7','Audible','Chapter 7 (Part 2)','Audible with no artist drops "Chapter "'},
             {'Episode 12 - Guests','The Podcast','','PocketCasts.Desktop','Episode 12','The Podcast','The Podcast','Pocket Casts'},
             {'Live Session - Part 1 (HD)','Channel','','MSEdge._crx_agimnkijcaahngcdmfeangaknmldooml','Live Session','Channel','From Youtube','YouTube web app'},
-            {' - ','','','','-','','','title that is only a separator stays'}}) do
+            {' - ','','','','-','','','title that is only a separator stays'},
+            -- Rule 1: "Chapter " only at the start.
+            {'New Chapter Begins','Band','','Spotify.exe','New Chapter Begins','Band','','"Chapter" inside a name stays'},
+            {'Chapter 4 - The Storm','Narrator','','Spotify.exe','4','Narrator','','"Chapter " at the start goes'},
+            -- Rule 2: only a From "Film" quote is a film; curly and single quotes count.
+            {'Song "Live"','Band','','MSEdge','Song "Live"','Band','','a quote that is not a film stays'},
+            {'Poove Poove (From \226\128\156Devadoothan\226\128\157)','K J Yesudas','','MSEdge','Poove Poove','K J Yesudas','Devadoothan','curly quotes'},
+            {"Song (From 'Film Name')",'Singer','','MSEdge','Song','Singer','Film Name','single quotes'},
+            {'Song (From Film Name)','Singer','','MSEdge','Song','Singer','Film Name','unquoted (From Film)'},
+            {'Song - From "Film"','Singer','','MSEdge','Song','Singer','Film','dash before From'},
+            -- Rule 3: "Song | Film | Singer | Composer".
+            {'Raathinkal Poothaali | Bharatham | K J Yesudas | Johnson','Malayalam Songs','','MSEdge','Raathinkal Poothaali','Malayalam Songs','Bharatham','pipe-separated upload'},
+            {'Neelakannukal | Video Song | Classics','Channel','','MSEdge','Neelakannukal','Channel','Classics','pipe album skips upload tags'},
+            -- Rule 4: junk tags go, other brackets stay, featured artists move.
+            {'Song Title (Official Video) [4K]','Band','','MSEdge','Song Title','Band','','junk tags removed'},
+            {'Song Title (Lyrical Video) | Film','Band','','MSEdge','Song Title','Band','Film','lyrical tag and pipe'},
+            {'Song Title (Male Version)','Band','','MSEdge','Song Title (Male Version)','Band','','meaningful bracket kept'},
+            {'Song Title (Remix)','Band','','Spotify.exe','Song Title (Remix)','Band','','remix kept'},
+            {'Shadow (HDR Mix)','Band','','Spotify.exe','Shadow (HDR Mix)','Band','','HD only as a whole word'},
+            {'Song (feat. Guest Singer)','Main Artist','','Spotify.exe','Song','Main Artist, Guest Singer','','featured artist moves'},
+            {'Song [ft. Guest]','Main, Guest','','Spotify.exe','Song','Main, Guest','','featured artist not repeated'},
+            -- Rule 5: "Artist - Song".
+            {'K J Yesudas - Poove Poove (Lyrical)','K J Yesudas - Topic','','MSEdge','Poove Poove','K J Yesudas','','artist first'},
+            {'KJ Yesudas - Raathinkal','Johnson and KJ Yesudas','','MSEdge','Raathinkal','Johnson and KJ Yesudas','','artist first, one of several'},
+            -- Rule 6: channel names.
+            {'Hello','AdeleVEVO','Hello','Spotify.exe','Hello','Adele','Hello','VEVO channel'},
+            {'Song','Sony Music Official','','MSEdge','Song','Sony Music','','Official channel'},
+            -- YouTube keeps a film it found.
+            {'Song | Film','Channel','','MSEdge._crx_agimnkijcaahngcdmfeangaknmldooml','Song','Channel','Film','YouTube with a film'}}) do
             local song,artist,album=M.cleanMedia(c[1],c[2],c[3],c[4])
             check(song==c[5] and artist==c[6] and album==c[7],'Media: '..c[8]..' -> '..song..' | '..artist..' | '..album)
         end

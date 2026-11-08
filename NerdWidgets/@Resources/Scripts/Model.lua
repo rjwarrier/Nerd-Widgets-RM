@@ -441,36 +441,98 @@ function M.utf8Trim(value, maxChars)
     if chars <= maxChars then return value end
     return value:sub(1, cut - 1) .. '…'
 end
--- Track cleanup, ported from the user's Tasker task "Parse Music Track" and the Kustom
--- "Music" widget that showed its result. Returns the song, artist and album to display.
---   song:   the title before " - ", then before " (", without "Chapter ".
---   album:  the first "quoted" name in the title (film songs: 'Song (From "Film")'),
---           else the album before " (".
---   Audible: album = title before " - ", artist = Audible, song = the artist field.
---   Pocket Casts: album and artist = the artist field (the podcast).
---   YouTube: album = From Youtube.
+-- Track cleanup, from the user's Tasker task "Parse Music Track" and Kustom "Music" widget,
+-- extended for YouTube-style uploads. Returns the song, artist and album to display.
+-- Music-Cleanup-Rules.md in the project root lists every rule with examples.
 local function trimText(value) return (tostring(value or ''):gsub('^%s+', ''):gsub('%s+$', '')) end
 local function before(value, sep)
     local i = value:find(sep, 1, true)
     return i and value:sub(1, i - 1) or value
 end
+-- Curly quotes become straight ones, so “Film” and ‘Film’ match like "Film".
+local curly = {['\226\128\156'] = '"', ['\226\128\157'] = '"', ['\226\128\152'] = "'", ['\226\128\153'] = "'"}
+local function straight(value) return (value:gsub('\226\128[\152\153\156\157]', curly)) end
+-- The film in 'From "Film"', "From 'Film'" or '(From Film)'; '' when there is none.
+local function filmOf(title)
+    local film = title:match('[Ff][Rr][Oo][Mm]%s+"([^"]+)"') or title:match("[Ff][Rr][Oo][Mm]%s+'([^']+)'")
+        or title:match('%(%s*[Ff][Rr][Oo][Mm]%s+([^%)"\']+)%)')
+    return film and trimText(film) or ''
+end
+-- Bracketed tags that only describe the upload. Short tags match as whole words only.
+local junkTags = {'official', 'video', 'lyric', 'audio', 'visuali', 'remaster', 'full song',
+    '%f[%w]hd%f[%W]', '%f[%w]hq%f[%W]', '%f[%w][48]k%f[%W]', '%f[%w]%d%d%d%d?p%f[%W]'}
+local function isJunk(tag)
+    tag = tag:lower()
+    for _, pattern in ipairs(junkTags) do if tag:find(pattern) then return true end end
+    return false
+end
+-- Removes (From ...), (feat. X) and junk tags in () or []; keeps the rest, e.g. (Male Version).
+-- Returns the cleaned text and the featured artist, if any.
+local function dropTags(value)
+    local featured
+    local function tag(group)
+        local inner = trimText(group:sub(2, -2))
+        local lower = inner:lower()
+        if lower:find('^from%s') then return '' end
+        local guest = lower:match('^feat%.?%s+') or lower:match('^featuring%s+') or lower:match('^ft%.?%s+')
+        if guest then featured = trimText(inner:sub(#guest + 1)); return '' end
+        if isJunk(inner) then return '' end
+        return group
+    end
+    value = value:gsub('%b()', tag):gsub('%b[]', tag)
+    return trimText((value:gsub('%s%s+', ' '))), featured
+end
+-- Channel names: "Name - Topic", "NameVEVO", "Name Official".
+local function cleanArtist(name)
+    name = name:gsub('%s+%-%s+[Tt]opic$', ''):gsub('VEVO$', ''):gsub('%s+[Oo]fficial$', '')
+    return trimText(name)
+end
+local function sameArtist(part, artist)
+    part, artist = part:lower(), artist:lower()
+    if #part < 3 or artist == '' then return false end
+    return part == artist or artist:find(part, 1, true) ~= nil or part:find(artist, 1, true) ~= nil
+end
 function M.cleanMedia(title, artist, album, app)
-    title, artist, album = trimText(title), trimText(artist), trimText(album)
+    title, artist, album = straight(trimText(title)), cleanArtist(straight(trimText(artist))), straight(trimText(album))
     local id = tostring(app or ''):lower()
+    local film = filmOf(title)
+    -- "Song | Film | Singer | Composer": the first part is the song, the second the film.
+    local song, pipeAlbum = title, ''
+    if title:find('|', 1, true) then
+        local parts = {}
+        for part in title:gmatch('[^|]+') do part = trimText(part); if part ~= '' then parts[#parts + 1] = part end end
+        song = parts[1] or title
+        -- The film is the next part that is not an upload tag ("Video Song", "Lyrical").
+        for i = 2, #parts do if not isJunk(parts[i]) then pipeAlbum = parts[i]; break end end
+    end
+    local featured
+    song, featured = dropTags(song)
+    -- "Song - Remastered" keeps the left part; "Artist - Song" (left part is the artist) the right.
+    local cut = song:find(' - ', 1, true)
+    if cut then
+        local left, right = trimText(song:sub(1, cut - 1)), trimText(song:sub(cut + 3))
+        if left ~= '' and right ~= '' and not right:lower():find('^from%s') and sameArtist(left, artist) then song = right
+        elseif left ~= '' then song = left end
+    end
+    song = trimText((song:gsub('^Chapter%s+', '')))
+    local who = artist
+    if featured and featured ~= '' and not who:lower():find(featured:lower(), 1, true) then
+        who = who ~= '' and who .. ', ' .. featured or featured
+    end
+    local set = film ~= '' and film or trimText(before(album, ' ('))
+    if set == '' then set = (dropTags(pipeAlbum)) end
     local head = trimText(before(title, ' - '))
     if head == '' then head = title end
-    local quoted = title:match('"([^"]*)')
-    quoted = quoted and trimText(quoted) or ''
-    local song, who, set = head, artist, quoted ~= '' and quoted or trimText(before(album, ' ('))
     if id:find('audible', 1, true) then
-        set, who, song = head, 'Audible', artist ~= '' and artist or head
+        -- Audible: the chapter is in the artist field and the book in the title.
+        set, who = head, 'Audible'
+        song = trimText((before(artist ~= '' and artist or head, ' ('):gsub('^Chapter%s+', '')))
     elseif id:find('pocketcasts', 1, true) then
         set, who = artist, artist
-    -- The YouTube app, or its installed web app in Edge or Chrome.
-    elseif id:find('youtube', 1, true) or id:find('agimnkijcaahngcdmfeangaknmldooml', 1, true) then
+    -- The YouTube app, or its installed web app in Edge or Chrome, when no film was found.
+    elseif (id:find('youtube', 1, true) or id:find('agimnkijcaahngcdmfeangaknmldooml', 1, true)) and set == '' then
         set = 'From Youtube'
     end
-    song = trimText(before(song, ' ('):gsub('Chapter ', ''))
     if song == '' then song = title end
     return song, who, set
 end
