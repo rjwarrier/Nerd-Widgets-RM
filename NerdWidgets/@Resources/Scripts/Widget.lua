@@ -1447,9 +1447,23 @@ local function vitals(now)
     H=(footerY+labelHeight(11)+10)
     header('SYSTEM VITALS')
     ring(cx1,cy,r,c,C.accent);ring(cx2,cy,r,rp,C.secondary)
-    local numberY=cy-28*N*.7-2
-    hero(string.format('%.0f',c)..'%',cx1,numberY,28,C.text,r*1.85,nil,'Center',var('NumberFont','JetBrains Mono'))
-    hero(total>0 and string.format('%.0f%%',rp) or '--',cx2,numberY,28,C.text,r*1.85,nil,'Center',var('NumberFont','JetBrains Mono'))
+    local nf=var('NumberFont','JetBrains Mono')
+    local function reading(value,cx)
+        if look=='Instrument' or value=='--' then
+            hero(value..(value=='--' and '' or '%'),cx,cy-28*N*.7-2,28,C.text,r*1.85,nil,'Center',nf)
+            return
+        end
+        -- Digits with a half-size % on their baseline, centred together in the ring.
+        local s=fontSize(value..'%',28,r*1.7,'number',nf)
+        local p=s*.5
+        local dw,pw=#value*.6*s,.6*p
+        local left=cx-(dw+pw)/2
+        local y=cy-(s*1.4+4)/2
+        text(value,left,y,s,C.text,dw+4,nil,'Left',nf,'fixed')
+        text('%',left+dw,y+1.08*(s-p),p,C.muted,pw+4,nil,'Left',nf,'fixed')
+    end
+    reading(string.format('%.0f',c),cx1)
+    reading(total>0 and string.format('%.0f',rp) or '--',cx2)
     text('CPU',cx1,labelY,10,C.muted,100,nil,'Center')
     text('MEMORY',cx2,labelY,10,C.muted,100,nil,'Center')
     rect(24,diskY,W-48,diskH,13,C.chip)
@@ -1702,12 +1716,33 @@ local function nowPlaying(now)
     local cy=y+10+labelHeight(9)+22
     local cx=W/2
     local live=active and C.text or C.muted
+    -- Icons are drawn as shapes so they sit exactly in their circles (font glyphs ride their line box);
+    -- a transparent box over each circle takes the click.
+    local function hit(x,r,code,tip)
+        text(' ',x-r,cy-r,10,C.muted,2*r,action(code))
+        texts[#texts].H=f(2*r);texts[#texts].SolidColor='0,0,0,1';texts[#texts].ToolTipText=tip
+    end
+    local function skip(x,dir,color)
+        -- A bar and a triangle, together centred on x: dir -1 points left (previous), 1 right (next).
+        local s=5.5
+        poly({{x-dir*s*.75,cy-s},{x-dir*s*.75,cy+s},{x+dir*s*.75,cy}},color)
+        rect(dir<0 and x-s*.75-2.2 or x+s*.75,cy-s,2.2,2*s,1,color)
+    end
     circle(cx-62,cy,17,C.chip)
-    glyph('[\\xE892]',cx-62,cy,14,(active and m.canPrev~='0') and live or C.muted,action("MediaCommand('prev')"))
+    skip(cx-62+1.1,-1,(active and m.canPrev~='0') and live or C.muted)
+    hit(cx-62,17,"MediaCommand('prev')",'Previous')
     circle(cx,cy,23,active and C.accent or C.chip)
-    glyph(m.playing and active and '[\\xE769]' or '[\\xE768]',cx,cy,18,active and C.surface or C.muted,action("MediaCommand('toggle')"))
+    local playColor=active and C.surface or C.muted
+    if m.playing and active then
+        rect(cx-6,cy-7.5,4,15,1,playColor);rect(cx+2,cy-7.5,4,15,1,playColor)
+    else
+        -- A triangle's visual centre is a third of its width from the flat side, so shift it right.
+        poly({{cx-4.5,cy-8.5},{cx-4.5,cy+8.5},{cx+8.5,cy}},playColor)
+    end
+    hit(cx,23,"MediaCommand('toggle')",m.playing and active and 'Pause' or 'Play')
     circle(cx+62,cy,17,C.chip)
-    glyph('[\\xE893]',cx+62,cy,14,(active and m.canNext~='0') and live or C.muted,action("MediaCommand('next')"))
+    skip(cx+62-1.1,1,(active and m.canNext~='0') and live or C.muted)
+    hit(cx+62,17,"MediaCommand('next')",'Next')
     -- Volume: mute toggle, a bar that sets the level where clicked, and the reading.
     local vol=measure('MeasureAudioVol')
     local muted=vol<0
