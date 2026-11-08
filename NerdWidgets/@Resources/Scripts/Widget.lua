@@ -1742,10 +1742,12 @@ local function nowPlaying(now)
     local tw=W-tx-24
     local function trim(value,size) return M.utf8Trim(value,math.max(4,math.floor((tw-2)/(size*T*.6)))) end
     if active then
-        text(trim(m.title,14),tx,ay+4,14,C.text,tw)
+        -- Song, artist and album cleaned up as the user's Tasker task did on the phone.
+        local song,artist,album=M.cleanMedia(m.title,m.artist,m.album,m.app)
+        text(trim(song,14),tx,ay+4,14,C.text,tw)
         local by=ay+4+labelHeight(14)+2
-        if (m.artist or '')~='' then text(trim(m.artist,11),tx,by,11,C.muted,tw);by=by+labelHeight(11) end
-        if (m.album or '')~='' and m.album~=m.title then text(trim(m.album,10),tx,by,10,C.muted,tw) end
+        if artist~='' then text(trim(artist,11),tx,by,11,C.muted,tw);by=by+labelHeight(11) end
+        if album~='' and album~=song then text(trim(string.upper(album),10),tx,by,10,C.muted,tw) end
     else
         text(alive and 'Nothing playing' or 'Starting media helper',tx,ay+4,14,C.text,tw)
         text(alive and 'Play music in any app' or 'Reads Windows media controls',tx,ay+4+labelHeight(14)+2,11,C.muted,tw)

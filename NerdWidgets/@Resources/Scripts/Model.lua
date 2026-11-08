@@ -441,6 +441,39 @@ function M.utf8Trim(value, maxChars)
     if chars <= maxChars then return value end
     return value:sub(1, cut - 1) .. '…'
 end
+-- Track cleanup, ported from the user's Tasker task "Parse Music Track" and the Kustom
+-- "Music" widget that showed its result. Returns the song, artist and album to display.
+--   song:   the title before " - ", then before " (", without "Chapter ".
+--   album:  the first "quoted" name in the title (film songs: 'Song (From "Film")'),
+--           else the album before " (".
+--   Audible: album = title before " - ", artist = Audible, song = the artist field.
+--   Pocket Casts: album and artist = the artist field (the podcast).
+--   YouTube: album = From Youtube.
+local function trimText(value) return (tostring(value or ''):gsub('^%s+', ''):gsub('%s+$', '')) end
+local function before(value, sep)
+    local i = value:find(sep, 1, true)
+    return i and value:sub(1, i - 1) or value
+end
+function M.cleanMedia(title, artist, album, app)
+    title, artist, album = trimText(title), trimText(artist), trimText(album)
+    local id = tostring(app or ''):lower()
+    local head = trimText(before(title, ' - '))
+    if head == '' then head = title end
+    local quoted = title:match('"([^"]*)')
+    quoted = quoted and trimText(quoted) or ''
+    local song, who, set = head, artist, quoted ~= '' and quoted or trimText(before(album, ' ('))
+    if id:find('audible', 1, true) then
+        set, who, song = head, 'Audible', artist ~= '' and artist or head
+    elseif id:find('pocketcasts', 1, true) then
+        set, who = artist, artist
+    -- The YouTube app, or its installed web app in Edge or Chrome.
+    elseif id:find('youtube', 1, true) or id:find('agimnkijcaahngcdmfeangaknmldooml', 1, true) then
+        set = 'From Youtube'
+    end
+    song = trimText(before(song, ' ('):gsub('Chapter ', ''))
+    if song == '' then song = title end
+    return song, who, set
+end
 -- Today's network traffic: rates (bytes/s) times the seconds since the last sample, restarting
 -- when the date changes. A gap over 5 s (sleep, a closed skin) counts as one second, since the
 -- rate says nothing about the time Rainmeter did not see.

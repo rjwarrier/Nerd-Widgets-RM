@@ -46,6 +46,24 @@ function Initialize()
     check(M.bcd(9,8) and M.bcd(9,1) and not M.bcd(9,4),'BCD bits')
     check(M.bytes(1610612736)=='1.5 GB' and M.bytes(524288000)=='500 MB','Byte formatting')
     do
+        -- Track cleanup ported from the Tasker task "Parse Music Track".
+        -- Each case: title, artist, album, app, then the expected song, artist, album.
+        for _,c in ipairs({
+            {'Poove Poove (From "Devadoothan")','K J Yesudas','Devadoothan (Original Motion Picture Soundtrack)','MSEdge',
+                'Poove Poove','K J Yesudas','Devadoothan','film song in quotes'},
+            {'Junile Nilamazhayil','Sujatha and K J Yesudas','','MSEdge','Junile Nilamazhayil','Sujatha and K J Yesudas','','plain title unchanged'},
+            {'Song Name - Remastered 2011','Band','Album (Deluxe Edition)','Spotify.exe','Song Name','Band','Album','dash suffix and album brackets dropped'},
+            {'Project Hail Mary - Chapter 3','Andy Weir','','AudibleInc.Audible_x','Andy Weir','Audible','Project Hail Mary','Audible'},
+            {'Chapter 7 (Part 2)','','','AudibleInc.Audible_x','7','Audible','Chapter 7 (Part 2)','Audible with no artist drops "Chapter "'},
+            {'Episode 12 - Guests','The Podcast','','PocketCasts.Desktop','Episode 12','The Podcast','The Podcast','Pocket Casts'},
+            {'Live Session - Part 1 (HD)','Channel','','MSEdge._crx_agimnkijcaahngcdmfeangaknmldooml','Live Session','Channel','From Youtube','YouTube web app'},
+            {' - ','','','','-','','','title that is only a separator stays'}}) do
+            local song,artist,album=M.cleanMedia(c[1],c[2],c[3],c[4])
+            check(song==c[5] and artist==c[6] and album==c[7],'Media: '..c[8]..' -> '..song..' | '..artist..' | '..album)
+        end
+        check(select(1,M.cleanMedia(nil,nil,nil,nil))=='','Media: nothing reported')
+    end
+    do
         -- Today's traffic: rate x seconds, gaps count one second, a new date starts over.
         local day={}
         M.addTraffic(day,'2026-11-08',1000,200,nil)
