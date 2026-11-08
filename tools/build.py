@@ -174,11 +174,11 @@ Group=NerdWidgetsDrawing
                            'WeatherTempUnit=celsius\nWeatherWindUnit=kmh\nWeatherWidth=340\n',
                 'Countdown': 'CountdownTitle=New Year\nCountdownDate=2027-01-01 00:00\nCountdownFrom=\nCountdownWidth=340\n',
                 'Focus': 'FocusWidth=340\n','GPU': 'GPUWidth=340\n','Calendar': 'CalendarWidth=340\nWeekStart=Mon\n','Clock': 'WeekStart=Mon\n',
-                'Processes': 'ProcessesWidth=340\n','DiskIO': 'DiskIOWidth=340\n','Binary': 'BinaryWidth=340\n','Battery': 'BatteryRange=360\nBatteryAutoScale=0\n',
+                'Processes': 'ProcessesWidth=340\n','DiskIO': 'DiskIOWidth=340\n','Binary': 'BinaryWidth=340\n','Battery': 'BatteryWidth=340\nBatteryRange=360\nBatteryAutoScale=0\n',
                 'Progress': 'ProgressWidth=340\nWeekStart=Mon\n','Analog': 'AnalogWidth=340\nAnalogSeconds=1\n',
                 'SunMoon': 'SunMoonWidth=340\nWeatherLatitude=0\nWeatherLongitude=0\nWeatherCity=\n',
                 'StatusBar': 'StatusBarWidth=800\nPingHost=1.1.1.1\nNetworkInterface=Best\n'}
-    variants = [('Battery','Battery',500,280,battery),('Battery','Compact',360,168,battery),
+    variants = [('Battery','Battery',340,280,battery),('Battery','Compact',340,168,battery),
                 ('Network','Network',340,230,network),('Network','NetworkCompact',340,150,network),
                 ('Vitals','Vitals',340,270,vitals),('Vitals','VitalsCompact',340,140,vitals),
                 ('Clock','Clock',340,220,''),('Clock','ClockCompact',340,120,''),('Shortcuts','Shortcuts',500,136,''),

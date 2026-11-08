@@ -314,16 +314,30 @@ local function battery(now)
     local range=M.batteryRange(num('BatteryRange',num('HistoryHours',6)*60))
     local span=range*60
     local top=44
-    local chipX=math.max(218,W-258)
+    -- Below 440 px (the standard 340 card) the two chips stack in a column right of the reading.
+    local narrow=W<440
+    local chipX=narrow and W-24-math.min(140,math.floor((W-48)*.45)) or math.max(218,W-258)
     local numberWidth=chipX-34
     local effective=fontSize(reading,56,numberWidth,'number',numberFont)
     header('BATTERY',string.upper(b.status))
     hero(reading,22,top,56,C.accent,numberWidth,'["ms-settings:batterysaver"]',nil,numberFont)
-    local cw=(W-chipX-32)/2
-    if unplugged then chip('ON BATTERY',unplugged,chipX,50,cw)
-    else chip('POWER',b.charging and 'Charging' or b.ac==1 and 'AC power' or b.ac==0 and 'Battery' or 'Unknown',chipX,50,cw) end
-    chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX+cw+8,50,cw)
-    local gx,gy,gw,gh=24,math.max(top+effective*1.4,50+chipHeight())+10,W-48,74
+    local cw=narrow and W-24-chipX or (W-chipX-32)/2
+    local source=b.charging and 'Charging' or b.ac==1 and 'AC power' or b.ac==0 and 'Battery' or 'Unknown'
+    local below
+    if narrow then
+        -- One chip; the power source is a plain line under it.
+        chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX,50,cw)
+        local lineY=50+chipHeight()+6
+        circle(chipX+5,lineY+labelHeight(10)/2,3,b.ac==1 and C.accent or C.muted)
+        text(unplugged and 'On battery '..unplugged or source,chipX+14,lineY,10,C.muted,cw-14)
+        below=lineY+labelHeight(10)
+    else
+        if unplugged then chip('ON BATTERY',unplugged,chipX,50,cw)
+        else chip('POWER',source,chipX,50,cw) end
+        chip('EST. LEFT',b.life and M.duration(b.life) or 'Unavailable',chipX+cw+8,50,cw)
+        below=50+chipHeight()
+    end
+    local gx,gy,gw,gh=24,math.max(top+effective*1.4,below)+10,W-48,74
     graphPanel(gx,gy,gw,gh,12)
     local px,py,pw,ph=gx+10,gy+10,gw-20,gh-20
     local t0=now-span
@@ -399,9 +413,11 @@ local function battery(now)
     end
     local footerY=rangeY+pillH+8
     local delta=b.valid and sessionLevel and string.format('%+.0f%%',b.percent-sessionLevel) or '--'
-    text(delta..' · '..(sessionStart and M.duration(now-sessionStart)..' observed' or 'No readings'),24,footerY,10,C.muted,W-230)
-    -- Legend, right-aligned: level, rate, charging band.
+    -- Legend, right-aligned: level, rate, charging band; the session delta takes what is left.
     local cwid=8*.6*10*T+2
+    local legendW=cwid+22+34*T+8+40*T
+    text(delta..' · '..(sessionStart and M.duration(now-sessionStart)..(narrow and '' or ' observed') or (narrow and '--' or 'No readings')),
+        24,footerY,10,C.muted,math.max(40,W-48-legendW-8))
     text('CHARGING',W-24,footerY,10,C.muted,cwid+4,nil,'Right')
     rect(W-24-cwid-14,footerY+labelHeight(10)/2-4,9,9,2,C.accent..',90')
     text('%/H',W-24-cwid-22,footerY,10,C.secondary,34*T,nil,'Right')
@@ -1868,7 +1884,7 @@ function LoadAll()
         if s.active==0 then
             SKIN:Bang('!ActivateConfig','NerdWidgets\\'..name,name..'.ini')
             if not s.placed then
-                local width=num(name..'Width',name=='Battery' and 500 or name=='StatusBar' and 800 or 340)
+                local width=num(name..'Width',name=='StatusBar' and 800 or 340)
                 cards[#cards+1]={w=width*scale,h=wd[2]*scale,wide=name=='StatusBar'};names[#cards]=name
             end
         end
@@ -1901,7 +1917,7 @@ function Initialize()
     S=M.size('Scale',num('Scale',1)) or 1
     T=M.size('TextScale',num('TextScale',1)) or 1
     N=M.size('NumberScale',num('NumberScale',1)) or 1
-    W=M.clamp(num('Width',340),kind=='Battery' and variant~='Compact' and 440 or 320,kind=='StatusBar' and 1920 or 800)
+    W=M.clamp(num('Width',340),320,kind=='StatusBar' and 1920 or 800)
     baseH=num('Height',240);H=baseH
     if kind=='Settings' then W=500;S=1;T=1;N=1 end
     look=var('Style','Expressive')

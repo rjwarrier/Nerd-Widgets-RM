@@ -128,7 +128,7 @@ function Initialize()
       local entry,kind,variant,height=e[1],e[2],e[3],e[4]
       for _,theme in ipairs({'Dark','Light','Blacks','Instrument'}) do
        for _,scale in ipairs({.25,.75,1,1.5}) do
-        for _,width in ipairs({320,500,800}) do
+        for _,width in ipairs({320,340,500,800}) do
          for _,flags in ipairs({1,8,128,255}) do
           local options={}
           local vars={['@']=root..'..\\',Kind=kind,Variant=variant,Width=tostring(width),Height=height,
