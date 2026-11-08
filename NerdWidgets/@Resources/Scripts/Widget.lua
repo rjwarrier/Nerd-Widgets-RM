@@ -1328,6 +1328,11 @@ local function sunMoon(now)
             local r,s=midnight+rise*3600,midnight+sunset*3600
             if s<r then s=s+86400 end
             values={os.date('%H:%M',r),os.date('%H:%M',s),hm(s-r)}
+            -- Solar noon: halfway between sunrise and sunset, under the top of the arc.
+            -- A dashed line from the horizon to just below the arc, labelled inside the arc.
+            local nx=(x0+x1)/2
+            for dy=0,amp-8,6 do line(nx,base-dy,nx,base-math.min(dy+3,amp-5),C.muted..',150',1.2) end
+            text('NOON '..os.date('%H:%M',r+(s-r)/2),nx+6,base-amp*.5-labelHeight(9)/2,9,C.muted,62)
             local frac=(now-r)/(s-r)
             if frac>=0 and frac<=1 then
                 local done={}
